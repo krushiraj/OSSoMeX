@@ -9,6 +9,25 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 
+from .contracts import unique_occurrences
+
+
+def aggregate_occurrences(occurrences: list[dict]) -> dict:
+    """Count canonical occurrences, not scalar-version public rows."""
+    records = unique_occurrences(occurrences)
+    intents, sentiments, versions = Counter(), Counter(), Counter()
+    export_rows = 0
+    for record in records:
+        intents.update(record.get("intents") or [])
+        if record.get("sentiment") is not None:
+            sentiments.update([record["sentiment"]])
+        values = {edge["text"] for edge in record["version_links"]}
+        versions.update(values or {"@null"})
+        export_rows += max(1, len(record["version_links"]))
+    return {"mention_count": len(records), "export_row_count": export_rows,
+            "intent_counts": dict(intents), "sentiment_counts": dict(sentiments),
+            "version_buckets": dict(versions)}
+
 
 def aggregate_documents(records: list[dict]) -> dict:
     """records: list of prediction rows combining public + evidence fields."""

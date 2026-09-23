@@ -1,0 +1,259 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SciBERT v2 occurrence",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "document_id",
+    "text_revision",
+    "mention_id",
+    "name",
+    "name_span",
+    "context_sentence",
+    "context_span",
+    "context_kind",
+    "version_links",
+    "version_status",
+    "intents",
+    "sentiment",
+    "evidence"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "2.0"
+    },
+    "document_id": {
+      "type": "string",
+      "pattern": "\\S"
+    },
+    "text_revision": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "mention_id": {
+      "type": "string",
+      "pattern": "\\S"
+    },
+    "name": {
+      "type": "string",
+      "pattern": "\\S"
+    },
+    "name_span": {
+      "type": "object",
+      "required": [
+        "start",
+        "end"
+      ],
+      "properties": {
+        "start": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "end": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "context_sentence": {
+      "type": "string",
+      "pattern": "\\S"
+    },
+    "context_span": {
+      "type": "object",
+      "required": [
+        "start",
+        "end"
+      ],
+      "properties": {
+        "start": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "end": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "context_kind": {
+      "enum": [
+        "sentence",
+        "paragraph",
+        "table",
+        "reference"
+      ]
+    },
+    "version_links": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "required": [
+          "text",
+          "span",
+          "status"
+        ],
+        "properties": {
+          "text": {
+            "type": "string",
+            "pattern": "\\S"
+          },
+          "span": {
+            "type": "object",
+            "required": [
+              "start",
+              "end"
+            ],
+            "properties": {
+              "start": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "end": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          },
+          "status": {
+            "enum": [
+              "explicit_local",
+              "explicit_remote"
+            ]
+          }
+        }
+      }
+    },
+    "version_status": {
+      "enum": [
+        "explicit",
+        "absent",
+        "ambiguous",
+        "unannotated"
+      ]
+    },
+    "intents": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "created",
+          "used",
+          "shared",
+          "mentioned"
+        ]
+      }
+    },
+    "sentiment": {
+      "enum": [
+        "positive",
+        "negative",
+        "mixed",
+        "not_expressed",
+        null
+      ]
+    },
+    "known": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "software",
+        "versions",
+        "created",
+        "used",
+        "shared",
+        "sentiment"
+      ],
+      "properties": {
+        "software": {
+          "type": "boolean"
+        },
+        "versions": {
+          "type": "boolean"
+        },
+        "created": {
+          "type": "boolean"
+        },
+        "used": {
+          "type": "boolean"
+        },
+        "shared": {
+          "type": "boolean"
+        },
+        "sentiment": {
+          "type": "boolean"
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "required": [
+        "intents",
+        "sentiment"
+      ],
+      "properties": {
+        "intents": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "start",
+              "end"
+            ],
+            "properties": {
+              "start": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "end": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          }
+        },
+        "sentiment": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "start",
+              "end"
+            ],
+            "properties": {
+              "start": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "end": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "anyOf": [
+    {
+      "required": [
+        "known"
+      ]
+    },
+    {
+      "required": [
+        "scores",
+        "calibration",
+        "needs_review",
+        "review_reasons",
+        "run_id",
+        "checkpoint_hashes"
+      ]
+    }
+  ]
+}

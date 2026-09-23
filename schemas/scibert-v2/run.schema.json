@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SciBERT v2 run",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "run_id",
+    "command",
+    "config_hash",
+    "source_hashes",
+    "dataset_hash",
+    "split_hash",
+    "model",
+    "tokenizer",
+    "environment",
+    "seeds",
+    "devices",
+    "checkpoints",
+    "capabilities",
+    "status",
+    "started_at_utc"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "2.0"
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "\\S"
+    },
+    "command": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "\\S"
+      },
+      "minItems": 1
+    },
+    "config_hash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "source_hashes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^sha256:[0-9a-f]{64}$"
+      }
+    },
+    "dataset_hash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "split_hash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "model": {
+      "type": "object"
+    },
+    "tokenizer": {
+      "type": "object"
+    },
+    "environment": {
+      "type": "object"
+    },
+    "seeds": {
+      "type": "array",
+      "items": {
+        "type": "integer"
+      }
+    },
+    "devices": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "\\S"
+      }
+    },
+    "checkpoints": {
+      "type": "array"
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "boolean"
+      }
+    },
+    "status": {
+      "enum": [
+        "running",
+        "success",
+        "partial",
+        "failed"
+      ]
+    },
+    "started_at_utc": {
+      "type": "string",
+      "pattern": "\\S"
+    }
+  }
+}

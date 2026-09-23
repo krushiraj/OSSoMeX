@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SciBERT v2 annotation reply",
+  "type": "object",
+  "required": [
+    "task_id",
+    "text_revision",
+    "status",
+    "occurrences",
+    "covered_regions",
+    "unresolved_regions",
+    "annotator",
+    "policy_version"
+  ],
+  "properties": {
+    "task_id": {
+      "type": "string",
+      "pattern": "\\S"
+    },
+    "text_revision": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "status": {
+      "enum": [
+        "complete",
+        "partial",
+        "failed"
+      ]
+    },
+    "occurrences": {
+      "type": "array",
+      "items": {
+        "$ref": "occurrence.schema.json"
+      }
+    },
+    "covered_regions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "start",
+          "end",
+          "fields",
+          "provenance"
+        ],
+        "properties": {
+          "start": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "end": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "fields": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "software",
+              "versions",
+              "created",
+              "used",
+              "shared",
+              "sentiment"
+            ],
+            "properties": {
+              "software": {
+                "type": "boolean"
+              },
+              "versions": {
+                "type": "boolean"
+              },
+              "created": {
+                "type": "boolean"
+              },
+              "used": {
+                "type": "boolean"
+              },
+              "shared": {
+                "type": "boolean"
+              },
+              "sentiment": {
+                "type": "boolean"
+              }
+            }
+          },
+          "provenance": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "unresolved_regions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "start",
+          "end"
+        ],
+        "properties": {
+          "start": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "end": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    },
+    "annotator": {
+      "type": "object",
+      "required": [
+        "runtime",
+        "model",
+        "prompt_hash",
+        "run_id"
+      ]
+    },
+    "policy_version": {
+      "type": "string",
+      "pattern": "\\S"
+    }
+  }
+}
