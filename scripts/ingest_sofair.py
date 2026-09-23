@@ -103,6 +103,8 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--sofair-dir", required=True)
     ap.add_argument("--pick-all", action="store_true", help="ingest every doc (overrides PICK)")
+    ap.add_argument("--schema-version", choices=("1", "2"), default="1")
+    ap.add_argument("--output", type=Path, help="required new output directory for schema v2")
     args = ap.parse_args()
     base = Path(args.sofair_dir)
 
@@ -117,6 +119,15 @@ def main() -> None:
             if not cand:
                 raise SystemExit(f"missing {disc}/{ident}")
             files.append(cand[0])
+
+    if args.schema_version == "2":
+        if args.output is None:
+            ap.error("--schema-version 2 requires --output; historical files are never overwritten")
+        from research.data.import_bundle import write_import_bundle
+        print(json.dumps(write_import_bundle(files, "tei", args.output), indent=2))
+        return
+    if args.output is not None:
+        ap.error("--output is supported only with --schema-version 2")
 
     docs_rows, gold_rows = [], []
     stats = Counter()

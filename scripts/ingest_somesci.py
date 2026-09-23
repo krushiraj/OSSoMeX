@@ -165,10 +165,21 @@ def main() -> None:
     ap.add_argument("--max-chars", type=int, default=35000)
     ap.add_argument("--min-mentions", type=int, default=6)
     ap.add_argument("--seed", type=int, default=7)
+    ap.add_argument("--schema-version", choices=("1", "2"), default="1")
+    ap.add_argument("--output", type=Path, help="required new output directory for schema v2")
     args = ap.parse_args()
 
     root = Path(__file__).resolve().parents[1]
     subset_dir = Path(args.label_dir) / args.subset
+
+    if args.schema_version == "2":
+        if args.output is None:
+            ap.error("--schema-version 2 requires --output; historical files are never overwritten")
+        from research.data.import_bundle import write_import_bundle
+        print(json.dumps(write_import_bundle(sorted(subset_dir.glob("*.txt")), "brat", args.output), indent=2))
+        return
+    if args.output is not None:
+        ap.error("--output is supported only with --schema-version 2")
 
     candidates = []
     dropped = 0
