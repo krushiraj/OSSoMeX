@@ -237,6 +237,120 @@
           }
         }
       }
+    },
+    "scores": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "software",
+        "version_links",
+        "intents",
+        "sentiment"
+      ],
+      "properties": {
+        "software": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "version_links": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        },
+        "intents": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "created",
+            "used",
+            "shared"
+          ],
+          "properties": {
+            "created": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "used": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "shared": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          }
+        },
+        "sentiment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "positive",
+            "negative",
+            "mixed",
+            "not_expressed"
+          ],
+          "properties": {
+            "positive": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "negative": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "mixed": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "not_expressed": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          }
+        }
+      }
+    },
+    "calibration": {
+      "enum": [
+        "uncalibrated",
+        "development_calibrated"
+      ]
+    },
+    "needs_review": {
+      "type": "boolean"
+    },
+    "review_reasons": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "\\S"
+      }
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "\\S"
+    },
+    "checkpoint_hashes": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "\\S"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^sha256:[0-9a-f]{64}$"
+      }
     }
   },
   "anyOf": [

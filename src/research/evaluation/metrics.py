@@ -5,7 +5,7 @@ from copy import deepcopy
 import hashlib
 import json
 
-from ..contracts import ContractError, FIELDS, INTENT_BITS, check_span, validate_document
+from ..contracts import ContractError, FIELDS, INTENT_BITS, check_span, validate_document, validate_occurrence
 from ..schema import INTENTS, SENTIMENTS
 
 VERSION = "scibert-v2.0"
@@ -125,6 +125,21 @@ def _validate_rows(records, docs, reference):
                 raise ContractError(record, "intents", "known reference labels cannot be null")
             if masks["sentiment"] and record.get("sentiment") not in SENTIMENTS:
                 raise ContractError(record, "sentiment", "known reference label cannot be null")
+            if record.get("record_kind") == "legacy_evaluation_only":
+                labels = record.get("intents")
+                if labels is not None:
+                    if labels != [label for label in INTENTS if label in labels]:
+                        raise ContractError(record, "intents", "legacy reference labels must be unique and ordered")
+                    if "mentioned" in labels and not all(masks[bit] for bit in INTENT_BITS):
+                        raise ContractError(record, "known", "mentioned requires all intent decisions known")
+                    if any(label in labels and not masks[label] for label in INTENT_BITS):
+                        raise ContractError(record, "known", "positive reference label has unknown mask")
+                    if all(masks[bit] for bit in INTENT_BITS) and not labels:
+                        raise ContractError(record, "intents", "complete negative intents require mentioned")
+                if not masks["sentiment"] and record.get("sentiment") is not None:
+                    raise ContractError(record, "sentiment", "unknown reference sentiment must be null")
+            else:
+                validate_occurrence(record, doc["text"])
         if record.get("intents") is not None:
             labels = record["intents"]
             if not isinstance(labels, list) or any(label not in INTENTS for label in labels) or ("mentioned" in labels and len(labels) != 1):
@@ -180,6 +195,10 @@ def evaluate_v2(documents: list[dict], gold: list[dict], predictions: list[dict]
         for key in ("chunks_expected", "chunks_succeeded", "chunks_failed"):
             if key in state and (type(state[key]) is not int or state[key] < 0):
                 raise ContractError(state, key, "chunk counts must be nonnegative integers")
+        if "chunks_succeeded" in state and "chunks_expected" in state:
+            accounted = state["chunks_succeeded"] + state.get("chunks_failed", 0)
+            if accounted > state["chunks_expected"]:
+                raise ContractError(state, "status", "chunk outcomes exceed expected chunks")
         states[state["document_id"]] = state
     supported = {"software": capabilities.get("software", capabilities.get("name", False)) is True,
                  "versions": capabilities.get("versions", capabilities.get("version", False)) is True,
@@ -253,9 +272,15 @@ def evaluate_v2(documents: list[dict], gold: list[dict], predictions: list[dict]
             auxiliary["zero_mention_false_positive"] = int(counts["mentions"]["fp"] > 0)
         state = states.get(doc_id, {"status": "missing"})
         status = state.get("status", state.get("final_status", "missing"))
+        unaccounted = 0
+        if "chunks_expected" in state and "chunks_succeeded" in state:
+            unaccounted = state["chunks_expected"] - state["chunks_succeeded"] - state.get("chunks_failed", 0)
+            if unaccounted and status in ("success", "no_mentions", "completed"):
+                status = "incomplete"
         failed = status not in ("success", "no_mentions", "completed") or state.get("chunks_failed", 0) > 0
         failure_counts["failed_documents"] += int(failed)
         failure_counts["failed_chunks"] += state.get("chunks_failed", 0)
+        failure_counts["unaccounted_chunks"] += unaccounted
         failure_counts["missing_status_documents"] += int(status == "missing")
         per_document.append({"document_id": doc_id, "work_group_id": doc.get("work_group_id", doc_id),
                              "source": (doc.get("metadata") or {}).get("source"), "text_revision": doc["text_revision"],

@@ -183,3 +183,32 @@ def test_custom_brat_relation_roles_preserved_without_guessing_direction():
     parsed = brat("X Y", "T1\tsoftware 0 1\tX\nT2\tsoftware 2 3\tY\nR1\tCoref Anaphor:T1 Antecedent:T2")
     assert parsed["relations"][0]["arguments"] == {"Anaphor": "T1", "Antecedent": "T2"}
     assert parsed["relations"][0]["source_id"] is None
+
+
+@pytest.mark.parametrize("encoding", ["utf-8", "utf-16", "utf-16-be", "utf-16-le"])
+def test_dtd_rejected_by_parser_in_every_supported_encoding(encoding):
+    payload = '<!DOCTYPE a [<!ENTITY x "ABC">]><TEI><text>&x;</text></TEI>'.encode(encoding)
+    with pytest.raises(ContractError, match="DTD"):
+        tei(payload)
+
+
+@pytest.mark.parametrize("span", [{"start": 4, "end": 5}, {"start": 6, "end": 7}])
+def test_section_and_page_spans_project_with_normalized_text(span):
+    from research.data.coverage import map_annotations
+    from research.data.import_bundle import native_policy
+    parsed = brat("A   X Y", "T1\tApplication_Usage 4 5\tX")
+    doc = {"document_id": "d", "text": parsed["text"], "sections": [{**span, "type": "methods"}], "page_spans": [{**span, "page": 1}]}
+    result = map_annotations(parsed, doc, native_policy("brat", 7))
+    for field in ("sections", "page_spans"):
+        projected = result["document"][field][0]
+        assert result["document"]["text"][projected["start"]:projected["end"]] == doc["text"][span["start"]:span["end"]]
+    assert result["document"]["sections"][0]["type"] == "methods"
+
+
+def test_resolved_plus_dangling_version_target_invalidates_complete_relation_coverage():
+    parsed = tei(b'<TEI><text><rs type="software" xml:id="s">X</rs> <rs type="version" xml:id="v" corresp="#s #missing">1</rs> <rs type="software" xml:id="s2">Y</rs></text></TEI>')
+    result = mapped(parsed)
+    assert result["occurrences"][0]["version_links"][0]["text"] == "1"
+    assert all(not o["known"]["versions"] for o in result["occurrences"])
+    assert all(not region["fields"]["versions"] for region in result["coverage"])
+    assert result["occurrences"][1]["version_status"] == "ambiguous"

@@ -280,3 +280,52 @@ def test_negative_failure_counts_and_bad_version_offsets_are_rejected(fixture_ca
     case["expected_occurrences"][0]["version_links"][0]["span"] = {"start": 0, "end": 4}
     with pytest.raises(ContractError):
         evaluate(case)
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_contradictory_reference_masks_rejected_at_evaluation_boundary(fixture_case, legacy):
+    from research.evaluation.legacy import convert_legacy
+    case = fixture_case("fixture-multiversion")
+    gold = deepcopy(case["expected_occurrences"])
+    if legacy:
+        row = {**case["expected_public_records"][0], "document_id": case["input"]["document_id"], "name_span": gold[0]["name_span"]}
+        gold = convert_legacy([row], [case["input"]], {"software": True, "versions": True, "intents": True, "sentiment": True}, reference=True)["occurrences"]
+    gold[0]["intents"] = ["mentioned"]
+    gold[0]["known"]["created"] = False
+    with pytest.raises(ContractError):
+        evaluate(case, gold=gold)
+
+
+def test_canonical_version_state_is_validated_before_scoring(fixture_case):
+    case = fixture_case("fixture-multiversion")
+    case["expected_occurrences"][0]["version_links"] = []
+    with pytest.raises(ContractError):
+        evaluate(case)
+
+
+def test_unaligned_version_rows_share_reported_occurrence_identity(fixture_case):
+    from research.evaluation.legacy import convert_legacy
+    case = fixture_case("fixture-multiversion")
+    rows = [{**p, "document_id": case["input"]["document_id"], "mention_id": "reported-one-occurrence", "name_span": {"start": 0, "end": 5}} for p in case["expected_public_records"]]
+    caps = {"software": True, "versions": True, "intents": True, "sentiment": True}
+    converted = convert_legacy(rows, [case["input"]], caps)
+    assert len(converted["unresolved_predictions"]) == 1
+    record = converted["unresolved_predictions"][0]
+    assert record["reported_name_span"] == {"start": 0, "end": 5}
+    assert len(record["version_links"]) == 2
+    result = evaluate(case, converted["unresolved_predictions"])
+    assert result["mention_detection"]["fp"] == 1
+    assert result["intents"]["per_label"]["used"]["fp"] == 1
+    assert result["sentiment"]["per_class"]["not_expressed"]["fp"] == 1
+    rows[1]["mention_id"] = "different-occurrence"
+    assert len(convert_legacy(rows, [case["input"]], caps)["unresolved_predictions"]) == 2
+
+
+def test_unaccounted_chunks_mark_document_incomplete_without_removing_misses(fixture_case):
+    case = fixture_case("fixture-multiversion")
+    status = {"document_id": case["input"]["document_id"], "status": "success", "chunks_expected": 3, "chunks_succeeded": 1, "chunks_failed": 0}
+    result = evaluate(case, [], statuses=[status])
+    assert result["mention_detection"]["fn"] == 1
+    assert result["failures"]["failed_documents"] == 1
+    assert result["failures"]["unaccounted_chunks"] == 2
+    assert result["per_document"][0]["status"] == "incomplete"

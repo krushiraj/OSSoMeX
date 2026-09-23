@@ -41,7 +41,20 @@ def map_annotations(parsed: dict, document: dict, mapping: dict) -> dict:
     if not mapping.get("policy_version"):
         raise ContractError(document, "policy_version", "explicit source mapping version required")
     normalized = normalize_with_offsets(raw)
-    doc = validate_document({**deepcopy(document), "text": normalized["text"],
+    projected_document = deepcopy(document)
+    for field in ("sections", "page_spans"):
+        if document.get(field) is None:
+            continue
+        if not isinstance(document[field], list):
+            raise ContractError(document, field, "requires an array or null")
+        projected_document[field] = []
+        for region in document[field]:
+            check_span(region, document, field, len(raw))
+            projected = project_span(region, normalized)
+            if projected is None:
+                raise ContractError(document, field, "unalignable metadata boundary", "ALIGNMENT_UNRESOLVED")
+            projected_document[field].append({**deepcopy(region), **projected})
+    doc = validate_document({**projected_document, "text": normalized["text"],
                              "text_revision": text_revision(normalized["text"]),
                              "original_text_revision": text_revision(raw),
                              "normalizer_version": normalized["normalizer_version"]})
@@ -98,6 +111,7 @@ def map_annotations(parsed: dict, document: dict, mapping: dict) -> dict:
     version_links = {}
     by_id = {span["source_id"]: span for span in native}
     linked = set()
+    unresolved_relations = False
     for relation in parsed["relations"]:
         if relation["kind"] not in mapping.get("version_relations", []):
             continue
@@ -105,6 +119,7 @@ def map_annotations(parsed: dict, document: dict, mapping: dict) -> dict:
         if (source in bad or target in bad or source not in by_id or target not in by_id
                 or by_id[source]["type"] not in version_types or by_id[target]["type"] not in software_types):
             exclusions.append({"code": "UNRESOLVED_VERSION_RELATION", **relation})
+            unresolved_relations = True
             continue
         span = projected_by_id[source]
         edge = {"text": text[span["start"]:span["end"]], "span": span, "status": "explicit_local"}
@@ -138,7 +153,7 @@ def map_annotations(parsed: dict, document: dict, mapping: dict) -> dict:
             if any(a < hi and lo < b for a, b in ranges):
                 item["fields"] = dict.fromkeys(FIELDS, False)
                 item["status"] = "partial"
-            if unlinked:
+            if unlinked or unresolved_relations:
                 item["fields"]["versions"] = False
             masked.append(item)
 
@@ -169,7 +184,7 @@ def map_annotations(parsed: dict, document: dict, mapping: dict) -> dict:
             context_end = len(text)
         context_span = {"start": context_start, "end": context_end}
         links = sorted(version_links.get(source_id, []), key=lambda edge: edge["span"]["start"])
-        status = ("explicit" if links else "absent") if known["versions"] else ("ambiguous" if links or unlinked else "unannotated")
+        status = ("explicit" if links else "absent") if known["versions"] else ("ambiguous" if links or unlinked or unresolved_relations else "unannotated")
         occurrence = {"schema_version": "2.0", "document_id": doc["document_id"], "text_revision": revision,
                       "mention_id": occurrence_id(doc["document_id"], revision, start, end),
                       "name": text[start:end], "name_span": span,

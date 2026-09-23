@@ -8,7 +8,7 @@ from ..schema import INTENTS, SENTIMENTS
 
 def convert_legacy(rows: list[dict], documents: list[dict], capabilities: dict, *, reference: bool = False) -> dict:
     docs = {d["document_id"]: validate_document(d) for d in documents}
-    occurrences, unresolved, issues = {}, [], []
+    occurrences, unresolved, issues = {}, {}, []
     for ordinal, source in enumerate(rows):
         row = deepcopy(source)
         doc_id = row.get("document_id")
@@ -61,16 +61,22 @@ def convert_legacy(rows: list[dict], documents: list[dict], capabilities: dict, 
                      "intents": [label for label in INTENTS if label in labels] if labels and capabilities.get("intents") else None,
                      "sentiment": row.get("sentiment") if known["sentiment"] else None,
                      "source_ordinals": [ordinal]}
+        destination = occurrences
         if not aligned:
             converted["alignment_status"] = "unaligned"
-            unresolved.append(converted)
+            converted["reported_name_span"] = deepcopy(span)
+            converted["reported_mention_id"] = row.get("mention_id")
+            if isinstance(row.get("mention_id"), str) and row["mention_id"].strip():
+                converted["mention_id"] = f"{doc_id}|{revision}|reported:{row['mention_id']}"
+            destination = unresolved
             issues.append({"document_id": doc_id, "source_ordinal": ordinal, "code": "UNALIGNED_PREDICTION"})
-            continue
         key = converted["mention_id"]
-        if key not in occurrences:
-            occurrences[key] = converted
+        if key not in destination:
+            destination[key] = converted
         else:
-            previous = occurrences[key]
+            previous = destination[key]
+            if previous["name"] != converted["name"] or previous.get("reported_name_span") != converted.get("reported_name_span"):
+                raise ContractError(row, "mention_id", "conflicting reported occurrence identity")
             conflicts = [field for field in ("intents", "sentiment") if previous[field] != converted[field]]
             if reference and (conflicts or previous["known"] != converted["known"]):
                 raise ContractError(row, "mention_id", "conflicting legacy reference labels at one occurrence")
@@ -85,4 +91,4 @@ def convert_legacy(rows: list[dict], documents: list[dict], capabilities: dict, 
             for link in links:
                 if link not in previous["version_links"]:
                     previous["version_links"].append(link)
-    return {"occurrences": list(occurrences.values()), "unresolved_predictions": unresolved, "issues": issues}
+    return {"occurrences": list(occurrences.values()), "unresolved_predictions": list(unresolved.values()), "issues": issues}

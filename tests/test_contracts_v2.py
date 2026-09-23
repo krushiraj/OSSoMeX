@@ -138,3 +138,45 @@ def test_json_schemas_cover_fixtures_and_require_run_provenance(contract_pack):
         jsonschema.validate({"run_id": "no-provenance"}, schemas["run"])
     with pytest.raises(jsonschema.ValidationError):
         jsonschema.validate({"task_id": "no-coverage"}, schemas["annotation"])
+
+
+def prediction_with_scores(fixture_case):
+    record = fixture_case("fixture-multiversion")["expected_occurrences"][0]
+    del record["known"]
+    record.update(scores={"software": 0.9, "version_links": [0.8, 0.7],
+                          "intents": {"created": 0.1, "used": 0.9, "shared": 0.1},
+                          "sentiment": {"positive": 0.1, "negative": 0.1, "mixed": 0.1, "not_expressed": 0.7}},
+                  calibration="uncalibrated", needs_review=False, review_reasons=[],
+                  run_id="unit-test-only", checkpoint_hashes={"detector": "sha256:" + "a" * 64})
+    return record
+
+
+@pytest.mark.parametrize("field", ["scores", "calibration", "needs_review", "review_reasons", "run_id", "checkpoint_hashes"])
+def test_prediction_metadata_cannot_be_null_in_runtime_or_json_schema(fixture_case, field):
+    record = prediction_with_scores(fixture_case)
+    record[field] = None
+    with pytest.raises(contracts().ContractError):
+        contracts().export_public([record])
+    path = Path(__file__).resolve().parents[1] / "schemas/scibert-v2/occurrence.schema.json"
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(record, json.loads(path.read_text()))
+
+
+@pytest.mark.parametrize("mutation", [
+    lambda r: r["scores"].update(software=float("nan")),
+    lambda r: r["scores"].update(software=1.1),
+    lambda r: r["scores"].update(version_links=[0.8]),
+    lambda r: r.update(run_id=" "),
+    lambda r: r.update(checkpoint_hashes={}),
+    lambda r: r.update(version_status="ambiguous"),
+])
+def test_invalid_prediction_scores_and_ambiguous_review_state_rejected(fixture_case, mutation):
+    record = prediction_with_scores(fixture_case)
+    mutation(record)
+    with pytest.raises(contracts().ContractError):
+        contracts().export_public([record])
+
+
+def test_valid_prediction_scores_export_without_invented_annotation_masks(fixture_case):
+    record = prediction_with_scores(fixture_case)
+    assert contracts().export_public([record])[0] == fixture_case("fixture-multiversion")["expected_public_records"]

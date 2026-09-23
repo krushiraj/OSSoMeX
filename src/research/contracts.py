@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 import hashlib
+import math
 import re
 
 from .schema import INTENTS, SENTIMENTS, validate_public_record
@@ -66,6 +67,42 @@ def validate_document(record: dict) -> dict:
     return {**deepcopy(record), "text_revision": revision}
 
 
+def _validate_prediction_metadata(record: dict) -> None:
+    _nonblank(record, "run_id")
+    if record.get("calibration") not in ("uncalibrated", "development_calibrated"):
+        raise ContractError(record, "calibration", "unknown calibration state")
+    if type(record.get("needs_review")) is not bool:
+        raise ContractError(record, "needs_review", "requires a boolean")
+    reasons = record.get("review_reasons")
+    if not isinstance(reasons, list) or any(not isinstance(r, str) or not r.strip() for r in reasons):
+        raise ContractError(record, "review_reasons", "requires nonblank reason strings")
+    if record["needs_review"] != bool(reasons):
+        raise ContractError(record, "review_reasons", "must agree with needs_review")
+    hashes = record.get("checkpoint_hashes")
+    if not isinstance(hashes, dict) or not hashes or any(
+        not isinstance(key, str) or not key.strip() or not isinstance(value, str)
+        or not re.fullmatch(r"sha256:[0-9a-f]{64}", value) for key, value in hashes.items()
+    ):
+        raise ContractError(record, "checkpoint_hashes", "requires named SHA-256 checkpoint hashes")
+    scores = record.get("scores")
+    if not isinstance(scores, dict) or set(scores) != {"software", "version_links", "intents", "sentiment"}:
+        raise ContractError(record, "scores", "requires software, version_links, intents and sentiment scores")
+    values = [scores["software"]]
+    for field, labels in (("intents", INTENT_BITS), ("sentiment", SENTIMENTS)):
+        group = scores[field]
+        if not isinstance(group, dict) or set(group) != set(labels):
+            raise ContractError(record, f"scores.{field}", "requires every class probability")
+        values.extend(group.values())
+    links = scores["version_links"]
+    if not isinstance(links, list) or len(links) != len(record.get("version_links", [])):
+        raise ContractError(record, "scores.version_links", "requires one score per confirmed edge")
+    values.extend(links)
+    if any(type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= 1 for value in values):
+        raise ContractError(record, "scores", "probabilities must be finite numbers in [0,1]")
+    if record.get("version_status") == "ambiguous" and not record["needs_review"]:
+        raise ContractError(record, "needs_review", "ambiguous versions require review")
+
+
 def _validate_occurrence(record: dict, text: str | None = None) -> None:
     if not isinstance(record, dict):
         raise ContractError({}, "occurrence", "requires an object")
@@ -94,6 +131,7 @@ def _validate_occurrence(record: dict, text: str | None = None) -> None:
         required = ("scores", "calibration", "needs_review", "review_reasons", "run_id", "checkpoint_hashes")
         if any(key not in record for key in required):
             raise ContractError(record, "known", "annotation masks or prediction provenance required")
+        _validate_prediction_metadata(record)
         known = dict.fromkeys(FIELDS, True)
     elif not isinstance(known, dict) or set(known) != set(FIELDS) or any(type(v) is not bool for v in known.values()):
         raise ContractError(record, "known", "requires every field mask as a boolean")

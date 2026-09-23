@@ -8,11 +8,16 @@ XML_ID = "{http://www.w3.org/XML/1998/namespace}id"
 BLOCKS = {"p", "head", "div", "ab", "item", "row", "bibl", "biblStruct", "note"}
 
 
+class _NoDoctypeBuilder(ET.TreeBuilder):
+    def doctype(self, name, pubid, system):
+        raise ContractError({}, "xml", "DTD declarations are not permitted", "UNSAFE_XML")
+
+
 def read_tei(xml_bytes: bytes) -> dict:
     if b"<!DOCTYPE" in xml_bytes.upper() or b"<!ENTITY" in xml_bytes.upper():
         raise ContractError({}, "xml", "DTD/entity declarations are not permitted", "UNSAFE_XML")
     try:
-        root = ET.fromstring(xml_bytes)
+        root = ET.fromstring(xml_bytes, parser=ET.XMLParser(target=_NoDoctypeBuilder()))
     except ET.ParseError as exc:
         raise ContractError({}, "xml", str(exc), "MALFORMED_XML") from exc
     local = lambda element: element.tag.rsplit("}", 1)[-1]
