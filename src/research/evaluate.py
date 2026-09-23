@@ -50,10 +50,18 @@ def group_by_doc(records: list[dict]) -> dict[str, list[dict]]:
 
 
 class Evaluator:
-    def __init__(self, score_sentiment: bool = True) -> None:
+    def __init__(self, score_sentiment: bool = True, metric_version: str = "legacy") -> None:
+        if metric_version not in ("legacy", "v2"):
+            raise ValueError(f"unknown metric version: {metric_version}")
         self.score_sentiment = score_sentiment
+        self.metric_version = metric_version
 
-    def evaluate(self, gold: list[dict], predictions: list[dict]) -> dict:
+    def evaluate(self, gold: list[dict], predictions: list[dict], **context) -> dict:
+        if self.metric_version == "v2":
+            from .evaluation.metrics import evaluate_v2
+            return evaluate_v2(gold=gold, predictions=predictions, **context)
+        if context:
+            raise ValueError("fixed-population context requires metric_version='v2'")
         pred = dedupe_predictions(predictions)
         gold_docs = group_by_doc(gold)
         pred_docs = group_by_doc(pred)
