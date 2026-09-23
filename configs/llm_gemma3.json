@@ -1,0 +1,13 @@
+{
+  "model_id": "gemma3:4b",
+  "provider": "ollama-local",
+  "base_url": "http://localhost:11434",
+  "temperature": 0,
+  "seed": 42,
+  "num_ctx": 8192,
+  "num_predict": 1024,
+  "timeout_seconds": 240,
+  "notes": "Local pilot stand-in for the required Arm L. A hosted frontier LLM remains unapproved. gemma2:2b is small; treat its outputs as exploratory.",
+  "use_format_json": false,
+  "model_notes": "local Ollama; no JSON grammar constraint (format:json distorts this model's output)"
+}

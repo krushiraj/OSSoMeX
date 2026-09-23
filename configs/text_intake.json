@@ -1,0 +1,12 @@
+{
+  "policy_version": "1.0",
+  "normalize": {
+    "line_endings": true,
+    "collapse_horizontal_whitespace": true,
+    "nbsp_to_space": true,
+    "collapse_newline_runs": true,
+    "dehyphenation": false,
+    "ligature_repair": false
+  },
+  "notes": "Dehyphenation and ligature repair are optional ablations, not applied here."
+}

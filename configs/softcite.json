@@ -1,0 +1,8 @@
+{
+  "endpoint": "http://localhost:8060/service/processSoftwareText",
+  "health_endpoint": "http://localhost:8060/service/isalive",
+  "timeout_seconds": 180,
+  "health_timeout_seconds": 10,
+  "model_id": "softcite/software-mentions:0.8.1",
+  "model_notes": "Docker grobid/software-mentions:0.8.1 (linux/amd64 under Rosetta, no GPU); ensemble DL model"
+}

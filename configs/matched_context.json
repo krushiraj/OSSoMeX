@@ -1,0 +1,8 @@
+{
+  "policy_version": "1.0",
+  "max_tokens_each_encoder": 512,
+  "target_content_tokens": 480,
+  "overlap_target_tokens": 64,
+  "tokenizer_counter": false,
+  "notes": "tokenizer_counter=false uses the documented chars/4 fallback. Set to a HuggingFace tokenizer id for true matched-context windows once encoder arms are runnable."
+}
