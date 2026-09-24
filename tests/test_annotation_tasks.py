@@ -315,3 +315,45 @@ def test_versioned_prepare_import_selects_validated_alias_and_verifies_snapshot(
     with pytest.raises(ValueError,match='missing or changed artifact'):
         main(['annotate','import','--tasks',str(tmp_path/'tasks'),'--replies',str(replies),
               '--selection',str(selection),'--output',str(tmp_path/'bad-reference')])
+
+
+@pytest.mark.parametrize('mutation,expected',[
+    ('missing_source','POLICY_SNAPSHOT_REQUIRED'),
+    ('null_source','POLICY_SNAPSHOT_REQUIRED'),
+    ('missing_prompts','PROMPT_SNAPSHOT_MISMATCH'),
+    ('downgraded_policy','TASK_POLICY_MISMATCH'),
+    ('missing_policy','TASK_POLICY_MISMATCH'),
+])
+def test_import_rejects_laundered_alias_task_manifest(tmp_path,mutation,expected):
+    from research.cli import main
+    from research.data.bundles import materialize_bundle
+    from research.annotations.policies import load_policy
+    root=Path(__file__).resolve().parents[1]
+    doc={'document_id':'d','text':'No tools.','source':'sofair','work_group_id':'g',
+         'split':'train','public':True,'access_basis':'fixture','text_license':'CC-BY-4.0'}
+    materialize_bundle({'role':'train','documents':[doc],'heldout':{}},tmp_path/'bundle')
+    assert main(['annotate','prepare','--bundle',str(tmp_path/'bundle'),
+                 '--policy',str(root/'annotations/scibert-v2/policy-2.1.md'),
+                 '--output',str(tmp_path/'tasks')])==0
+    manifest_path=tmp_path/'tasks/manifest.json'
+    meta=json.loads(manifest_path.read_bytes())
+    if mutation=='missing_source':
+        del meta['policy_source']
+    elif mutation=='null_source':
+        meta['policy_source']=None
+    elif mutation=='missing_prompts':
+        del meta['prompt_sources']
+    elif mutation=='downgraded_policy':
+        meta['policy']=load_policy(root/'annotations/scibert-v2/policy.md')
+        del meta['policy_source']
+        del meta['prompt_sources']
+    else:
+        del meta['policy']
+        del meta['policy_source']
+        del meta['prompt_sources']
+    manifest_path.write_text(json.dumps(meta))
+    (tmp_path/'replies').mkdir()
+    with pytest.raises(ValueError,match=expected):
+        main(['annotate','import','--tasks',str(tmp_path/'tasks'),
+              '--replies',str(tmp_path/'replies'),'--output',str(tmp_path/'reference')])
+    assert not (tmp_path/'reference').exists()

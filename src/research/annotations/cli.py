@@ -86,14 +86,26 @@ def run(args):
         meta=json.loads((args.tasks/'manifest.json').read_bytes())
         if meta['role'] not in ('train','dev'): raise ValueError('SPLIT_NOT_PERMITTED')
         for row in meta['files']: verified_path(args.tasks,row)
+        tasks={t['task_id']:t for t in read_jsonl(args.tasks/'tasks.jsonl')}
+        policy=meta.get('policy')
+        if (not isinstance(policy,dict)
+                or any(t.get('policy_version')!=policy.get('policy_version')
+                       or t.get('policy_hash')!=policy.get('policy_hash') for t in tasks.values())):
+            raise ValueError('TASK_POLICY_MISMATCH')
+        snapshot_required=(policy.get('policy_version')=='scibert-poc-2.1'
+                           or 'prompt_sources' in meta
+                           or any(row.get('path')=='policy.md' for row in meta['files']))
+        if snapshot_required and not isinstance(meta.get('policy_source'),dict):
+            raise ValueError('POLICY_SNAPSHOT_REQUIRED')
         if 'policy_source' in meta:
             source=meta['policy_source']
-            if (source.get('sha256')!=meta['policy']['policy_hash']
+            if (not isinstance(source,dict)
+                    or source.get('sha256')!=policy['policy_hash']
                     or source.get('path')!='policy.md'
                     or not any(row=={'path':'policy.md','sha256':source['sha256']} for row in meta['files'])):
                 raise ValueError('POLICY_SNAPSHOT_MISMATCH')
             snapshot=verified_path(args.tasks,source)
-            if load_policy(snapshot)!=meta['policy']:
+            if load_policy(snapshot)!=policy:
                 raise ValueError('POLICY_SNAPSHOT_MISMATCH')
             prompts=meta.get('prompt_sources')
             if not isinstance(prompts,dict) or set(prompts)!={'annotate','check'}:
@@ -104,10 +116,6 @@ def run(args):
                                 for row in meta['files'])):
                     raise ValueError('PROMPT_SNAPSHOT_MISMATCH')
                 verified_path(args.tasks,record)
-        tasks={t['task_id']:t for t in read_jsonl(args.tasks/'tasks.jsonl')}
-        if 'policy_source' in meta and any(t['policy_version']!=meta['policy']['policy_version']
-                                             or t['policy_hash']!=meta['policy']['policy_hash'] for t in tasks.values()):
-            raise ValueError('TASK_POLICY_MISMATCH')
         candidates={}; seen=set()
         for path in sorted(args.replies.glob('*.json')):
             reply=json.loads(path.read_bytes()); key=(reply['task_id'],reply['attempt_id'])
