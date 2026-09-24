@@ -1,0 +1,41 @@
+{
+  "schema_version": "2.0",
+  "sources": [
+    {
+      "name": "sofair", "kind": "local_archive", "format": "zip",
+      "path": "inputs/sofair/SoFAIR_annotated_dataset_V2.zip",
+      "url": "https://ordo.open.ac.uk/articles/dataset/30374830",
+      "release": "SoFAIR annotated dataset V2",
+      "sha256": "7e3364dc01987f12579d45300ea615501bf5a2da62739438561888b6551faea1",
+      "metadata_license": "CC-BY-4.0", "license_evidence_url": "https://api.figshare.com/v2/articles/30374830",
+      "text_license": null, "access_basis": null, "public": true,
+      "supplied_text_scope": "unverified", "native_split": null
+    },
+    {
+      "name": "somesci", "kind": "remote_archive",
+      "url": "https://zenodo.org/api/records/8100213/files/SoMeSci.zip/content",
+      "release": "zenodo:8100213", "md5": "c0cbea79c1e7af6f5adfc02da06ca023",
+      "text_license": "CC-BY-4.0", "access_basis": "https://zenodo.org/records/8100213",
+      "public": true, "supplied_text_scope": "mixed",
+      "native_split_metadata": "train_devel_test_split.json", "skip_symlinks": true
+    },
+    {
+      "name": "somesci-split", "kind": "file",
+      "url": "https://raw.githubusercontent.com/dave-s477/SoMeSci/75b7d9d924f2a108c2baaefe677829e3a8879afa/train_devel_test_split.json",
+      "release": "75b7d9d924f2a108c2baaefe677829e3a8879afa",
+      "metadata_license": "CC-BY-4.0"
+    },
+    {
+      "name": "ecosystems", "kind": "metadata", "url": "https://papers.ecosyste.ms/api/v1/papers",
+      "id_field": "doi", "page_size": 100, "max_pages": 20, "target_candidates": 60,
+      "query": {"sort": "id", "order": "asc"}, "metadata_license": "CC-BY-SA-4.0"
+    },
+    {
+      "name": "openalex", "kind": "metadata", "url": "https://api.openalex.org/works",
+      "results_key": "results", "id_field": "id", "page_size_key": "per-page",
+      "page_size": 100, "max_pages": 20, "target_candidates": 60,
+      "query": {"filter": "language:en,is_oa:true", "sort": "publication_date:desc"},
+      "metadata_license": "CC0"
+    }
+  ]
+}

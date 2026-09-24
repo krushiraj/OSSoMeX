@@ -396,6 +396,8 @@ def cmd_report(args: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m research")
     sub = parser.add_subparsers(dest="command", required=True)
+    from .data.cli import register as register_data
+    register_data(sub)
 
     p = sub.add_parser("inventory")
     p.add_argument("--input", required=True)
