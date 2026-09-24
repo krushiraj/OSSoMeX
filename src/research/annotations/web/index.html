@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Software mention review</title><link rel="stylesheet" href="/review.css"></head>
+<body>
+<header><div><h1>Software mention review</h1><p id="mode">Local review. References remain provisional.</p></div><button id="export">Export JSONL</button></header>
+<p id="export-result" role="status"></p>
+<section aria-label="Review queue" class="queue-panel">
+  <div class="filters">
+    <label>Status<select id="filter-status"><option value="all">All</option><option value="unreviewed">Unreviewed</option><option value="in_progress">In progress</option><option value="reviewed">Name audit done</option></select></label>
+    <label>Source<input id="filter-source" placeholder="Any source"></label>
+    <label>Reason<input id="filter-reason" placeholder="Any reason"></label>
+    <label>Unresolved field<select id="filter-field"><option value="">Any</option><option>versions</option><option>created</option><option>used</option><option>shared</option><option>sentiment</option></select></label>
+    <button id="filter">Filter queue</button><p id="progress"></p>
+  </div>
+  <div id="queue"></div>
+</section>
+<main id="workspace" hidden>
+  <section class="reading" aria-label="Source passage">
+    <nav><button id="previous">Previous</button><button id="next">Next</button><span>Alt + arrow keys</span></nav>
+    <h2 id="source-title"></h2><p id="boundaries" class="metadata"></p><p id="audit-message"></p>
+    <button id="reveal">Show proposed labels</button>
+    <div id="passage" tabindex="0"></div>
+    <div class="actions"><button id="add-name">Add selected name</button><button id="add-version">Link selected version</button><button id="use-evidence">Use selection as evidence</button></div>
+    <p class="hint">Select text to add a name or link a version. Offsets count Unicode characters, not browser code units.</p>
+    <div id="occurrences"></div>
+    <label>Whole-passage review note<input id="passage-reason" placeholder="What did you check?"></label>
+    <button id="finish-audit">Finish name audit</button>
+    <p class="hint">Certifies a search for missed names in the owned region. Review each proposed label separately.</p>
+  </section>
+  <section class="editor" aria-label="Occurrence editor">
+    <h2>Occurrence</h2><p id="selection-label">Select a proposed name or add one from the passage.</p>
+    <form id="editor-form" hidden>
+      <div class="pair"><label>Name start<input id="name-start" type="number" min="0" required></label><label>Name end<input id="name-end" type="number" min="1" required></label></div>
+      <fieldset><legend>Author intent</legend><div class="intent-options">
+        <label><input type="checkbox" id="intent-created"> Created</label><label><input type="checkbox" id="intent-used"> Used</label>
+        <label><input type="checkbox" id="intent-shared"> Shared</label><label><input type="checkbox" id="intent-mentioned"> Mentioned only</label>
+      </div><p class="hint">Leave unchecked to keep intent unresolved.</p></fieldset>
+      <label>Sentiment<select id="sentiment"><option value="">Unresolved</option><option value="not_expressed">Not expressed</option><option value="positive">Positive</option><option value="negative">Negative</option><option value="mixed">Mixed</option></select></label>
+      <label>Version decision<select id="version-state"><option value="unannotated">Unresolved / not checked</option><option value="absent">Checked: no explicit version</option><option value="explicit">Explicit links</option><option value="ambiguous">Ambiguous</option></select></label>
+      <div id="version-list"></div>
+      <fieldset><legend>Supporting evidence</legend><div class="pair"><label>Start<input id="evidence-start" type="number" min="0"></label><label>End<input id="evidence-end" type="number" min="1"></label></div><p class="hint">Required for created/used/shared or expressed sentiment. You can select the supporting text on the left.</p><pre id="evidence-view"></pre></fieldset>
+      <label>Reason for this decision<textarea id="reason" rows="3" required></textarea></label>
+      <div class="actions"><button type="submit">Save occurrence</button><button type="button" id="accept">Accept occurrence</button><button type="button" id="remove" class="danger">Remove occurrence</button></div>
+    </form>
+    <p id="message" role="status" aria-live="polite"></p>
+  </section>
+</main>
+<p id="empty">Open a passage from the queue to review it.</p>
+<script src="/review.js"></script>
+</body></html>

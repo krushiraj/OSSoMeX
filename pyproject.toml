@@ -13,6 +13,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+dev = ["pytest>=8,<10", "pytest-playwright>=0.5,<1"]
 ml = [
     "torch>=2.2",
     "transformers>=4.40",
@@ -21,6 +22,9 @@ ml = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"research.annotations" = ["web/*.html", "web/*.js", "web/*.css"]
 
 [tool.pytest.ini_options]
 addopts = "-q"

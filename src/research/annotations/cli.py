@@ -21,6 +21,7 @@ def register(subparsers):
     p=sub.add_parser('review'); p.add_argument('--bundle',type=Path,required=True)
     p.add_argument('--store',type=Path,required=True); p.add_argument('--host',default='127.0.0.1')
     p.add_argument('--port',type=int,default=8765); p.set_defaults(func=run)
+    p=sub.add_parser('demo'); p.add_argument('--output',type=Path,required=True); p.set_defaults(func=run)
 
 
 def run(args):
@@ -29,6 +30,8 @@ def run(args):
         serve_review(args.bundle,args.store,args.host,args.port)
         return 0
     if args.output.exists(): raise FileExistsError(args.output)
+    if args.annotation_command=='demo':
+        return build_demo(args.output)
     if args.annotation_command=='prepare':
         manifest,docs=load_bundle(args.bundle)
         policy_path=ROOT/'annotations/scibert-v2/policy.md'
@@ -80,4 +83,32 @@ def run(args):
                    'task_count':len(items),'task_manifest_sha256':digest((args.tasks/'manifest.json').read_bytes()),
                    'files':[{'path':'items.jsonl','sha256':digest((args.output/'items.jsonl').read_bytes())}]}))
         print(json.dumps({'status':'provisional','tasks':len(items)}))
+    return 0
+
+
+def build_demo(output: Path) -> int:
+    from copy import deepcopy
+    from ..contracts import FIELDS, occurrence_id
+    pack=json.loads((ROOT/'docs/plans/scibert-contract-examples.json').read_bytes())
+    policy={'policy_version':'scibert-poc-2.0','policy_hash':digest((ROOT/'annotations/scibert-v2/policy.md').read_bytes())}
+    items=[]
+    cases=deepcopy(pack['extraction_cases'])
+    cases.append({'input':{'document_id':'fixture-missed-emoji','text':'😀 We used NumPy. The software made the analysis easier.'},'expected_occurrences':[]})
+    for case in cases:
+        doc={**case['input'],'source':'synthetic-contract-fixture','split':'demo'}
+        for task in make_tasks(doc,policy):
+            region=task['annotation_region']
+            occurrences=[o for o in case['expected_occurrences'] if region['start']<=o['name_span']['start']<o['name_span']['end']<=region['end']]
+            for o in occurrences:
+                o['mention_id']=occurrence_id(o['document_id'],o['text_revision'],o['name_span']['start'],o['name_span']['end'])
+                o['review']={'status':'synthetic_fixture','reasons':review_reasons(o,None)}
+            task['whole_passage_audit']=True
+            items.append({'task':task,'annotation':{'occurrences':occurrences,'status':'partial',
+                         'covered_regions':[],'unresolved_regions':[region],
+                         'annotation_revision':1,'review_status':'synthetic_fixture'}})
+    output.mkdir(parents=True)
+    write_jsonl(output/'items.jsonl',items)
+    write_once(output/'manifest.json',json_bytes({'role':'demo','quality':'synthetic_not_research',
+               'files':[{'path':'items.jsonl','sha256':digest((output/'items.jsonl').read_bytes())}]}))
+    print(json.dumps({'status':'synthetic_demo','tasks':len(items)}))
     return 0
