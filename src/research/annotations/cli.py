@@ -4,6 +4,8 @@ from pathlib import Path
 from ..data.bundles import load_bundle
 from ..data.manifest import digest, json_bytes, read_jsonl, verified_path, write_jsonl, write_once
 from .tasks import check_authorization, make_tasks
+from .tasks import make_region_task
+from .policies import load_policy, snapshot_prompts
 from .validation import store_reply, validate_reply
 from .routing import audit_passages, freeze_occurrence_audit, review_reasons
 
@@ -14,6 +16,7 @@ def register(subparsers):
     parser=subparsers.add_parser('annotate')
     sub=parser.add_subparsers(dest='annotation_command',required=True)
     p=sub.add_parser('prepare'); p.add_argument('--bundle',type=Path,required=True)
+    p.add_argument('--policy',type=Path); p.add_argument('--regions',type=Path)
     p.add_argument('--output',type=Path,required=True); p.set_defaults(func=run)
     p=sub.add_parser('import')
     for name in ('tasks','replies','output'): p.add_argument('--'+name,type=Path,required=True)
@@ -34,31 +37,86 @@ def run(args):
         return build_demo(args.output)
     if args.annotation_command=='prepare':
         manifest,docs=load_bundle(args.bundle)
-        policy_path=ROOT/'annotations/scibert-v2/policy.md'
-        policy={'policy_version':'scibert-poc-2.0','policy_hash':digest(policy_path.read_bytes()),'max_chars':6000}
+        explicit=args.policy is not None or args.regions is not None
+        policy_path=args.policy or ROOT/'annotations/scibert-v2/policy.md'
+        policy=load_policy(policy_path) if explicit else {'policy_version':'scibert-poc-2.0',
+               'policy_hash':digest(policy_path.read_bytes()),'max_chars':6000}
         approvals=json.loads((ROOT/'approvals.json').read_bytes())
-        tasks=[t for d in docs for t in make_tasks(d,policy)]
+        if args.regions is None:
+            tasks=[t for d in docs for t in make_tasks(d,policy)]
+        else:
+            documents={d['document_id']:d for d in docs}
+            requests=read_jsonl(args.regions)
+            spans={}
+            tasks=[]
+            for row in requests:
+                document=documents.get(row.get('document_id'))
+                if document is None:
+                    raise ValueError('UNKNOWN_REGION_DOCUMENT')
+                if row.get('text_revision')!=document['text_revision']:
+                    raise ValueError('REGION_REVISION_MISMATCH')
+                task=make_region_task(document,policy,row.get('annotation_region'),row.get('context_span'),
+                                      region_kind=row.get('region_kind'))
+                owned=task['annotation_region']; key=task['document_id']
+                if any(owned['start']<other['end'] and other['start']<owned['end'] for other in spans.get(key,[])):
+                    raise ValueError('OVERLAPPING_OWNED_REGIONS')
+                spans.setdefault(key,[]).append(owned)
+                tasks.append(task)
         for task in tasks: check_authorization(task,approvals)
         audit=audit_passages(tasks,42,3)
         for task in tasks: task['whole_passage_audit']=task['task_id'] in audit
         args.output.mkdir(parents=True)
         write_jsonl(args.output/'tasks.jsonl',tasks)
+        files=[{'path':'tasks.jsonl','sha256':digest((args.output/'tasks.jsonl').read_bytes())}]
+        if explicit:
+            write_once(args.output/'policy.md',policy_path.read_bytes())
+            files.append({'path':'policy.md','sha256':policy['policy_hash']})
         meta={'role':manifest['role'],'policy':policy,'source_bundle_sha256':digest((args.bundle/'manifest.json').read_bytes()),
-              'files':[{'path':'tasks.jsonl','sha256':digest((args.output/'tasks.jsonl').read_bytes())}],
+              'files':files,
               'whole_passage_audit_ids':audit, 'task_count':len(tasks)}
+        if explicit:
+            meta['policy_source']={'path':'policy.md','sha256':policy['policy_hash'],
+                                   'source_path':str(policy_path.resolve())}
+            prompts=snapshot_prompts(args.output,policy)
+            meta['prompt_sources']=prompts
+            files.extend({'path':record['path'],'sha256':record['sha256']} for record in prompts.values())
         write_once(args.output/'manifest.json',json_bytes(meta))
         print(json.dumps({'task_count':len(tasks),'whole_passage_audits':len(audit)}))
     else:
         meta=json.loads((args.tasks/'manifest.json').read_bytes())
         if meta['role'] not in ('train','dev'): raise ValueError('SPLIT_NOT_PERMITTED')
         for row in meta['files']: verified_path(args.tasks,row)
+        if 'policy_source' in meta:
+            source=meta['policy_source']
+            if (source.get('sha256')!=meta['policy']['policy_hash']
+                    or source.get('path')!='policy.md'
+                    or not any(row=={'path':'policy.md','sha256':source['sha256']} for row in meta['files'])):
+                raise ValueError('POLICY_SNAPSHOT_MISMATCH')
+            snapshot=verified_path(args.tasks,source)
+            if load_policy(snapshot)!=meta['policy']:
+                raise ValueError('POLICY_SNAPSHOT_MISMATCH')
+            prompts=meta.get('prompt_sources')
+            if not isinstance(prompts,dict) or set(prompts)!={'annotate','check'}:
+                raise ValueError('PROMPT_SNAPSHOT_MISMATCH')
+            for record in prompts.values():
+                if (not isinstance(record,dict) or
+                        not any(row=={'path':record.get('path'),'sha256':record.get('sha256')}
+                                for row in meta['files'])):
+                    raise ValueError('PROMPT_SNAPSHOT_MISMATCH')
+                verified_path(args.tasks,record)
         tasks={t['task_id']:t for t in read_jsonl(args.tasks/'tasks.jsonl')}
+        if 'policy_source' in meta and any(t['policy_version']!=meta['policy']['policy_version']
+                                             or t['policy_hash']!=meta['policy']['policy_hash'] for t in tasks.values()):
+            raise ValueError('TASK_POLICY_MISMATCH')
         candidates={}; seen=set()
         for path in sorted(args.replies.glob('*.json')):
             reply=json.loads(path.read_bytes()); key=(reply['task_id'],reply['attempt_id'])
             if key in seen: raise ValueError('DUPLICATE_ATTEMPT')
             seen.add(key)
             if reply['task_id'] not in tasks: raise ValueError('UNKNOWN_TASK')
+            if 'policy_source' in meta and reply.get('annotator',{}).get('prompt_hash') not in {
+                    row['sha256'] for row in meta['prompt_sources'].values()}:
+                raise ValueError('PROMPT_HASH_MISMATCH')
             valid=validate_reply(tasks[reply['task_id']],reply)
             candidates.setdefault(reply['task_id'],[]).append((reply,valid))
         selection=json.loads(args.selection.read_bytes()) if args.selection else {}

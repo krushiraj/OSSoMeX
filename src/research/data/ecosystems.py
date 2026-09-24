@@ -6,7 +6,8 @@ import re
 from urllib.parse import unquote, urlencode, urlsplit
 
 from ..contracts import validate_document
-from ..annotations.tasks import check_authorization
+from ..annotations.tasks import check_authorization, make_region_task
+from ..annotations.policies import load_policy, snapshot_prompts
 from .acquire import AcquisitionError, component_url, fetch_public
 from .bundles import materialize_bundle
 from .jats import normalize_doi, read_jats, select_sentences
@@ -75,8 +76,10 @@ def collect_pilot(config: dict, output: Path) -> dict:
     exclusions = [d for path in config['exclusion_documents'] for d in read_jsonl(Path(path))]
     index = ExclusionIndex(exclusions)
     approvals = json.loads((ROOT/'approvals.json').read_bytes())
-    policy_hash = digest((ROOT/'annotations/scibert-v2/policy.md').read_bytes())
-    policy_version = 'scibert-poc-2.0'
+    policy_path=Path(config.get('annotation_policy',ROOT/'annotations/scibert-v2/policy.md'))
+    policy=load_policy(policy_path)
+    policy_hash=policy['policy_hash']
+    policy_version=policy['policy_version']
     docs, tasks, sentences, associations, issues = [], [], [], [], []
     seen = set()
 
@@ -147,15 +150,19 @@ def collect_pilot(config: dict, output: Path) -> dict:
                     raise ValueError('SELECTED_CONTEXT_EXCEEDS_LIMIT')
                 for row in chosen:
                     context=row['paragraph_span']; owned={'start':row['start'],'end':row['end']}
-                    identity=[doc['document_id'],doc['text_revision'],policy_version,policy_hash,row['start'],row['end']]
-                    task={'task_id':'task:'+digest(json_bytes(identity))[:32],'document_id':doc['document_id'],
-                          'text_revision':doc['text_revision'],'policy_version':policy_version,'policy_hash':policy_hash,
-                          'text':doc['text'][context['start']:context['end']],'context_span':context,
-                          'annotation_region':owned,'offset_base':context['start'],
-                          'requested_fields':['software','version','version_links','intents','sentiment'],
-                          'candidate_system_predictions':None,'hard_split':False,'source':'ecosystems','split':'train',
-                          'public':True,'access_basis':doc['access_basis'],'text_license':doc['text_license'],
-                          'whole_passage_audit':True}
+                    if 'annotation_policy' in config:
+                        task=make_region_task(doc,policy,owned,context,region_kind='sentence')
+                        task['whole_passage_audit']=True
+                    else:
+                        identity=[doc['document_id'],doc['text_revision'],policy_version,policy_hash,row['start'],row['end']]
+                        task={'task_id':'task:'+digest(json_bytes(identity))[:32],'document_id':doc['document_id'],
+                              'text_revision':doc['text_revision'],'policy_version':policy_version,'policy_hash':policy_hash,
+                              'text':doc['text'][context['start']:context['end']],'context_span':context,
+                              'annotation_region':owned,'offset_base':context['start'],
+                              'requested_fields':['software','version','version_links','intents','sentiment'],
+                              'candidate_system_predictions':None,'hard_split':False,'source':'ecosystems','split':'train',
+                              'public':True,'access_basis':doc['access_basis'],'text_license':doc['text_license'],
+                              'whole_passage_audit':True}
                     check_authorization(task,approvals)
                     tasks.append(task)
                     sentences.append({**row,'task_id':task['task_id'],'document_id':doc['document_id'],
@@ -173,10 +180,21 @@ def collect_pilot(config: dict, output: Path) -> dict:
     if docs:
         materialize_bundle({'documents':docs,'role':'train','heldout':{},'split_digest':digest(json_bytes([d['source_ids'] for d in docs]))},output/'bundle',resume=True)
         write_jsonl(output/'tasks/tasks.jsonl',tasks)
-        write_once(output/'tasks/manifest.json',json_bytes({'role':'train','task_count':len(tasks),'policy':{'policy_version':policy_version,'policy_hash':policy_hash},
+        task_files=[{'path':'tasks.jsonl','sha256':digest((output/'tasks/tasks.jsonl').read_bytes())}]
+        task_policy={'policy_version':policy_version,'policy_hash':policy_hash}
+        policy_source={}
+        if 'annotation_policy' in config:
+            write_once(output/'tasks/policy.md',policy_path.read_bytes())
+            task_files.append({'path':'policy.md','sha256':policy_hash})
+            task_policy=policy
+            policy_source={'policy_source':{'path':'policy.md','sha256':policy_hash,
+                                            'source_path':str(policy_path.resolve())}}
+            prompts=snapshot_prompts(output/'tasks',policy)
+            policy_source['prompt_sources']=prompts
+            task_files.extend({'path':record['path'],'sha256':record['sha256']} for record in prompts.values())
+        write_once(output/'tasks/manifest.json',json_bytes({'role':'train','task_count':len(tasks),'policy':task_policy,
                    'source_bundle_sha256':digest((output/'bundle/manifest.json').read_bytes()),
-                   'files':[{'path':'tasks.jsonl','sha256':digest((output/'tasks/tasks.jsonl').read_bytes())}],
-                   'whole_passage_audit_ids':[t['task_id'] for t in tasks]}))
+                   'files':task_files,'whole_passage_audit_ids':[t['task_id'] for t in tasks],**policy_source}))
     files=[{'path':str(p.relative_to(output)),'sha256':digest(p.read_bytes())} for p in sorted(output.rglob('*')) if p.is_file()]
     report={'status':'ready_for_annotation' if len(docs)==max_papers else 'partial' if docs else 'blocked',
             'paper_count':len(docs),'target_papers':max_papers,'sentence_count':len(sentences),'issue_count':len(issues),

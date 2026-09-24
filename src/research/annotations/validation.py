@@ -4,6 +4,7 @@ from pathlib import Path
 
 from ..contracts import FIELDS, occurrence_id, text_revision, validate_occurrence
 from ..data.manifest import digest, json_bytes, write_once
+from .aliases import validate_alias_annotations
 
 
 def _inside(span, lo, hi):
@@ -76,6 +77,17 @@ def validate_reply(task: dict, reply: dict) -> dict:
     if len({r['mention_id'] for r in occurrences}) != len(occurrences):
         raise ValueError('DUPLICATE_OCCURRENCE')
     result=deepcopy(reply); result['occurrences']=occurrences
+    if 'alias_annotations' in reply:
+        if task.get('policy_version')!='scibert-poc-2.1' or 'aliases' not in task.get('requested_fields',[]):
+            raise ValueError('ALIAS_NOT_REQUESTED')
+        if reply['alias_annotations'] is None:
+            raise ValueError('INVALID_ALIAS_RECORD')
+        layer=deepcopy(reply['alias_annotations'])
+        if isinstance(layer,dict) and isinstance(layer.get('relations'),list):
+            for relation in layer['relations']:
+                if isinstance(relation,dict):
+                    relation['review']={'status':'agent_provisional','reasons':['alias_link_review']}
+        result['alias_annotations']=validate_alias_annotations(task,occurrences,layer)
     result['review_status']='agent_provisional'
     result['complete_negative_regions']=[deepcopy(r) for r in covered if r['status']=='complete' and all(r['fields'].values())
                                          and not any(r['start'] < o['name_span']['end'] and o['name_span']['start'] < r['end'] for o in occurrences)]

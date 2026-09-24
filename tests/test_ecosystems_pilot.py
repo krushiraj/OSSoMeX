@@ -198,3 +198,36 @@ def test_incomplete_bundle_bytes_are_not_overwritten(pilot_inputs,monkeypatch):
         ecosystems.collect_pilot(config,output)
     assert damaged.read_bytes()==b'{"partial":'
     assert not (output/'manifest.json').exists()
+
+
+def test_versioned_collector_policy_snapshot_and_alias_tasks(pilot_inputs):
+    from research.data.ecosystems import collect_pilot
+    from research.annotations.policies import load_policy
+    config,output,_,_=pilot_inputs
+    policy_path=Path(__file__).resolve().parents[1]/'annotations/scibert-v2/policy-2.1.md'
+    config['annotation_policy']=str(policy_path)
+    report=collect_pilot(config,output)
+    assert report['status']=='ready_for_annotation'
+    meta=json.loads((output/'tasks/manifest.json').read_bytes())
+    policy=load_policy(policy_path)
+    assert meta['policy']==policy
+    assert meta['policy_source']['sha256']==policy['policy_hash']
+    assert set(meta['prompt_sources'])=={'annotate','check'}
+    tasks=read_jsonl(output/'tasks/tasks.jsonl')
+    assert tasks and all('aliases' in task['requested_fields'] and task['policy_hash']==policy['policy_hash'] for task in tasks)
+    assert (output/'tasks/policy.md').read_bytes()==policy_path.read_bytes()
+
+
+def test_frozen_collector_cache_replay_retains_existing_hashes_without_fetch(monkeypatch):
+    from research.data import ecosystems
+    root=Path(__file__).resolve().parents[1]
+    output=root/'data/scibert-v2/ecosystems-pilot-002'
+    config=json.loads((output/'config.json').read_bytes())
+    before=(output/'manifest.json').read_bytes()
+    task_manifest=(output/'tasks/manifest.json').read_bytes()
+    def no_fetch(*args,**kwargs):
+        raise AssertionError('cached replay attempted network access')
+    monkeypatch.setattr(ecosystems,'fetch_public',no_fetch)
+    assert ecosystems.collect_pilot(config,output)==json.loads(before)
+    assert (output/'manifest.json').read_bytes()==before
+    assert (output/'tasks/manifest.json').read_bytes()==task_manifest

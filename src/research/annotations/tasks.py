@@ -29,12 +29,39 @@ def make_tasks(document: dict, policy: dict) -> list[dict]:
                           'text_revision':doc['text_revision'], 'policy_version':policy['policy_version'],
                           'policy_hash':policy['policy_hash'], 'text':text[lo:hi], 'context_span':{'start':lo,'end':hi},
                           'annotation_region':{'start':start,'end':end}, 'offset_base':lo,
-                          'requested_fields':['software','version','version_links','intents','sentiment'],
+                          'requested_fields':['software','version','version_links','intents','sentiment']+
+                                             (['aliases'] if policy.get('alias_schema_version')=='1.0' else []),
                           'candidate_system_predictions':None, 'hard_split':hard,
                           'source':doc.get('source'), 'split':doc.get('split'), 'public':doc.get('public',False),
                           'access_basis':doc.get('access_basis'), 'text_license':doc.get('text_license')})
             start=end
     return tasks
+
+
+def make_region_task(document: dict, policy: dict, owned: dict, context: dict, *, region_kind: str = 'region') -> dict:
+    doc=validate_document(document)
+    if region_kind not in ('sentence','region'):
+        raise ValueError('INVALID_REGION_KIND')
+    text=doc['text']; limit=min(policy.get('max_chars',6000),6000)
+    for span in (owned,context):
+        if (not isinstance(span,dict) or type(span.get('start')) is not int
+                or type(span.get('end')) is not int or not 0<=span['start']<span['end']<=len(text)):
+            raise ValueError('INVALID_REGION_SPAN')
+    if (limit<1 or context['end']-context['start']>limit
+            or not context['start']<=owned['start']<owned['end']<=context['end']):
+        raise ValueError('INVALID_REGION_CONTEXT')
+    start,end=owned['start'],owned['end']
+    identity=[doc['document_id'],doc['text_revision'],policy['policy_version'],policy['policy_hash'],start,end]
+    return {'task_id':'task:'+digest(json_bytes(identity))[:32], 'document_id':doc['document_id'],
+            'text_revision':doc['text_revision'],'policy_version':policy['policy_version'],
+            'policy_hash':policy['policy_hash'],'text':text[context['start']:context['end']],
+            'context_span':dict(context),'annotation_region':dict(owned),'offset_base':context['start'],
+            'annotation_region_kind':region_kind,
+            'requested_fields':['software','version','version_links','intents','sentiment']+
+                               (['aliases'] if policy.get('alias_schema_version')=='1.0' else []),
+            'candidate_system_predictions':None,'hard_split':False,
+            'source':doc.get('source'),'split':doc.get('split'),'public':doc.get('public',False),
+            'access_basis':doc.get('access_basis'),'text_license':doc.get('text_license')}
 
 
 def check_authorization(task: dict, approvals: dict) -> None:
