@@ -194,6 +194,10 @@ def validate_snapshot_store(bundle: Path, store: Path) -> None:
         snapshot_decisions=data['decision-records.jsonl']
         if decisions[:len(snapshot_decisions)]!=snapshot_decisions:
             raise ValueError('SNAPSHOT_STORE_HISTORY_MISMATCH')
+        advanced_tasks={row['task_id'] for row in decisions[len(snapshot_decisions):]}
+        baseline={row['task_id']:row for row in data['store-items.jsonl']}
+        if any(row['task_id'] not in advanced_tasks and row!=baseline[row['task_id']] for row in rows):
+            raise ValueError('SNAPSHOT_STORE_STATE_MISMATCH')
     except (sqlite3.DatabaseError,KeyError,TypeError,AttributeError) as exc:
         raise ValueError('SNAPSHOT_STORE_INVALID') from exc
     finally:

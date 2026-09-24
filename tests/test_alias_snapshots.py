@@ -161,3 +161,34 @@ def test_legacy_absence_and_raw_json_strings_survive_snapshot(tmp_path):
     assert read_jsonl(tmp_path/'snapshot/aliases.jsonl')==[]
     assert read_jsonl(tmp_path/'snapshot/alias_groups.jsonl')==[]
     c.close()
+
+
+@pytest.mark.parametrize('other_task_advanced',[False,True])
+@pytest.mark.parametrize('mutation',['annotation','status','json_format'])
+def test_snapshot_startup_rejects_unchanged_task_state_drift(tmp_path,other_task_advanced,mutation):
+    from test_review_store import item
+    from research.annotations.snapshots import restore_review_snapshot, validate_snapshot_store
+    first=alias_item(); second=item('Another task with no software.')
+    c=store.open_store(tmp_path/'first.sqlite'); store.import_items(c,[first,second],'demo')
+    rid=first['annotation']['alias_annotations']['relations'][0]['relation_id']
+    store.apply_decision(c,decision(first['task'],action='accept_alias',target_relation_id=rid))
+    store.export_reference(c,tmp_path/'snapshot'); c.close()
+    restored=tmp_path/'restored.sqlite'; restore_review_snapshot(tmp_path/'snapshot',restored)
+    c=store.open_store(restored)
+    if other_task_advanced:
+        store.apply_decision(c,decision(second['task'],'later-other-task'))
+    validate_snapshot_store(tmp_path/'snapshot',restored)
+    tid=first['task']['task_id']
+    if mutation=='status':
+        c.execute("UPDATE items SET status='reviewed' WHERE task_id=?",(tid,))
+    else:
+        annotation=store.get_item(c,tid)['annotation']
+        if mutation=='annotation':
+            annotation['alias_annotations']['relations'][0].update(decision='not_alias',preferred_mention_id=None)
+        c.execute('UPDATE items SET annotation=? WHERE task_id=?',(
+            json.dumps(annotation,indent=2 if mutation=='json_format' else None),tid))
+    before=raw_rows(c)
+    with pytest.raises(ValueError,match='SNAPSHOT_STORE_STATE_MISMATCH'):
+        validate_snapshot_store(tmp_path/'snapshot',restored)
+    assert raw_rows(c)==before
+    c.close()
