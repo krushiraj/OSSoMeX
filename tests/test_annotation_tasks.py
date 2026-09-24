@@ -317,6 +317,87 @@ def test_versioned_prepare_import_selects_validated_alias_and_verifies_snapshot(
               '--selection',str(selection),'--output',str(tmp_path/'bad-reference')])
 
 
+def test_selected_definition_import_preserves_existing_negative_task(tmp_path):
+    from research.cli import main
+    from research.data.bundles import materialize_bundle
+    from research.data.manifest import read_jsonl
+    from research.annotations.aliases import alias_relation_id
+
+    definition='We developed Interactive Continuous Enzyme Kinetics Analysis Tool (ICEKAT).'
+    negative='No further experiments were required.'
+    text=f'{definition} {negative}'
+    doc={'document_id':'synthetic-boundary','text':text,'source':'ecosystems',
+         'work_group_id':'synthetic-boundary','split':'train','public':True,
+         'access_basis':'fixture','text_license':'CC-BY-4.0'}
+    bundle=tmp_path/'bundle'
+    materialize_bundle({'role':'train','documents':[doc],'heldout':{}},bundle)
+
+    def selector(start,end):
+        return {'document_id':doc['document_id'],'text_revision':text_revision(text),
+                'annotation_region':{'start':start,'end':end},
+                'context_span':{'start':0,'end':len(text)},'region_kind':'sentence'}
+
+    old_region=tmp_path/'old-region.jsonl'
+    old_region.write_text(json.dumps(selector(len(definition)+1,len(text)))+'\n')
+    policy_root=Path(__file__).resolve().parents[1]/'annotations/scibert-v2'
+    old_tasks=tmp_path/'old-tasks'
+    assert main(['annotate','prepare','--bundle',str(bundle),
+                 '--policy',str(policy_root/'policy.md'),'--regions',str(old_region),
+                 '--output',str(old_tasks)])==0
+    old_task_bytes=(old_tasks/'tasks.jsonl').read_bytes()
+    old_task=read_jsonl(old_tasks/'tasks.jsonl')[0]
+    assert old_task['annotation_region']=={'start':len(definition)+1,'end':len(text)}
+
+    new_region=tmp_path/'new-region.jsonl'
+    new_region.write_text(json.dumps(selector(0,len(definition)))+'\n')
+    new_tasks=tmp_path/'new-tasks'
+    assert main(['annotate','prepare','--bundle',str(bundle),
+                 '--policy',str(policy_root/'policy-2.1.md'),'--regions',str(new_region),
+                 '--output',str(new_tasks)])==0
+    task=read_jsonl(new_tasks/'tasks.jsonl')[0]
+    assert task['annotation_region']=={'start':0,'end':len(definition)}
+    assert task['task_id']!=old_task['task_id']
+    assert (old_tasks/'tasks.jsonl').read_bytes()==old_task_bytes
+
+    annotation=deepcopy(alias_item()['annotation'])
+    annotation.update({key:task[key] for key in ('task_id','document_id','text_revision','policy_version')})
+    annotation['attempt_id']='synthetic-check-1'
+    annotation['annotator']['prompt_hash']=json.loads((new_tasks/'manifest.json').read_bytes())['prompt_sources']['check']['sha256']
+    annotation['covered_regions']=[{**task['annotation_region'],'status':'complete',
+                                     'fields':dict.fromkeys(FIELDS,True)}]
+    for occurrence in annotation['occurrences']:
+        occurrence['document_id']=task['document_id']
+        occurrence['text_revision']=task['text_revision']
+        occurrence.pop('mention_id',None)
+        assert task['annotation_region']['start']<=occurrence['name_span']['start']
+        assert occurrence['name_span']['end']<=task['annotation_region']['end']
+    ids=sorted(f"{task['document_id']}|{task['text_revision']}|{o['name_span']['start']}:{o['name_span']['end']}"
+               for o in annotation['occurrences'])
+    relation=annotation['alias_annotations']['relations'][0]
+    relation.update(document_id=task['document_id'],text_revision=task['text_revision'],
+                    member_mention_ids=ids,relation_id=alias_relation_id(task['document_id'],task['text_revision'],ids),
+                    preferred_mention_id=next(mid for mid in ids if mid.endswith('|67:73')))
+    replies=tmp_path/'replies'; replies.mkdir()
+    (replies/'check.json').write_text(json.dumps(annotation))
+    selection=tmp_path/'selection.json'
+    selection.write_text(json.dumps({task['task_id']:'synthetic-check-1'}))
+    reference=tmp_path/'reference'
+    assert main(['annotate','import','--tasks',str(new_tasks),'--replies',str(replies),
+                 '--selection',str(selection),'--output',str(reference)])==0
+    selected=read_jsonl(reference/'items.jsonl')[0]
+    assert len(selected['annotation']['occurrences'])==2
+    assert len(selected['annotation']['alias_annotations']['relations'])==1
+    assert (old_tasks/'tasks.jsonl').read_bytes()==old_task_bytes
+
+    annotation['task_id']=old_task['task_id']
+    bad_replies=tmp_path/'bad-replies'; bad_replies.mkdir()
+    (bad_replies/'old-task.json').write_text(json.dumps(annotation))
+    with pytest.raises(ValueError,match='UNKNOWN_TASK'):
+        main(['annotate','import','--tasks',str(new_tasks),'--replies',str(bad_replies),
+              '--output',str(tmp_path/'bad-reference')])
+    assert (old_tasks/'tasks.jsonl').read_bytes()==old_task_bytes
+
+
 @pytest.mark.parametrize('mutation,expected',[
     ('missing_source','POLICY_SNAPSHOT_REQUIRED'),
     ('null_source','POLICY_SNAPSHOT_REQUIRED'),
