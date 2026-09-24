@@ -29,6 +29,7 @@ annotations/*
 !annotations/scibert-v2/
 annotations/scibert-v2/*
 !annotations/scibert-v2/policy.md
+!annotations/scibert-v2/scope-2026-09-24.md
 logs*.txt
 task_ledger.jsonl
 deviations.jsonl

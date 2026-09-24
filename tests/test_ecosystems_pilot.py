@@ -109,3 +109,92 @@ def test_ecosystems_cli_is_available_and_reports_blocked(tmp_path,monkeypatch):
                                                   'max_papers':1,'exclusion_documents':[]}))
     assert main(['data','ecosystems','--config',str(tmp_path/'config.json'),'--output',str(tmp_path/'pilot')])==2
     assert json.loads((tmp_path/'pilot/manifest.json').read_bytes())['status']=='blocked'
+
+
+@pytest.fixture
+def pilot_inputs(tmp_path, monkeypatch):
+    from research.data import ecosystems, acquire
+    from test_acquisition import Session, Response
+    project='https://papers.ecosyste.ms/api/v1/projects/pypi/numpy'
+    paper='https://papers.ecosyste.ms/api/v1/papers/10.1234%2Fexample'
+    search='https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=DOI%3A%2210.1234%2Fexample%22&format=json&resultType=core&pageSize=10'
+    urls={'project':project,'mentions':project+'/mentions?per_page=20&page=1','paper':paper,'search':search}
+    responses={project:{'name':'numpy','project_url':project},
+               urls['mentions']:[{'project_url':project,'paper_url':paper}],
+               paper:{'doi':'10.1234/example'},
+               search:{'resultList':{'result':[{'doi':'10.1234/example','pmcid':'PMC123','isOpenAccess':'Y','language':'eng'}]}}}
+    original=acquire.fetch_public
+    def fetch(url,path,policy):
+        data=ARTICLE.encode() if url.endswith('/fullTextXML') else json.dumps(responses[url]).encode()
+        return original(url,path,{**policy,'session':Session([Response(data)])})
+    monkeypatch.setattr(ecosystems,'fetch_public',fetch)
+    excluded=tmp_path/'excluded.jsonl'
+    write_jsonl(excluded,[{'document_id':'excluded','text':'A different article with no shared content.'}])
+    config={'projects':[{'url':project}],'max_papers':1,'exclusion_documents':[str(excluded)]}
+    return config, tmp_path/'pilot', urls, responses
+
+
+@pytest.mark.parametrize('change',['missing','changed'])
+def test_cached_pilot_rechecks_external_exclusions(pilot_inputs,change):
+    from research.data.ecosystems import collect_pilot
+    config,output,_,_=pilot_inputs
+    collect_pilot(config,output)
+    excluded=Path(config['exclusion_documents'][0])
+    if change=='missing': excluded.unlink()
+    else: excluded.write_text('{"document_id":"new","text":"Changed corpus."}\n')
+    with pytest.raises(ValueError,match='STALE_EXCLUSION_INPUTS'):
+        collect_pilot(config,output)
+
+
+@pytest.mark.parametrize('stage,payload',[
+    ('project',None), ('mentions',[None]), ('mentions',[{'paper_url':None}]),
+    ('paper',[]), ('search',None), ('search',{'resultList':None}),
+    ('search',{'resultList':{'result':None}}), ('search',{'resultList':{'result':[None]}}),
+    ('search',{'resultList':{'result':[{'doi':'10.1234/example','isOpenAccess':'Y','pmcid':None}]}}),
+])
+def test_malformed_remote_shapes_become_acquisition_issues(pilot_inputs,stage,payload):
+    from research.data.ecosystems import collect_pilot
+    config,output,urls,responses=pilot_inputs
+    responses[urls[stage]]=payload
+    report=collect_pilot(config,output)
+    assert report['status']=='blocked' and report['issue_count']==1
+    assert read_jsonl(output/'issues.jsonl')[0]['code']
+    assert (output/'manifest.json').is_file()
+
+
+def test_bad_candidate_does_not_discard_later_valid_paper(pilot_inputs):
+    from research.data.ecosystems import collect_pilot
+    config,output,urls,responses=pilot_inputs
+    responses[urls['mentions']].insert(0,None)
+    report=collect_pilot(config,output)
+    assert report['paper_count']==1 and report['issue_count']==1
+
+
+@pytest.mark.parametrize('stage',['bundle/manifest.json','tasks/manifest.json'])
+def test_interrupted_finalization_resumes_identical_files(pilot_inputs,monkeypatch,stage):
+    from research.data import ecosystems, bundles
+    config,output,_,_=pilot_inputs
+    module=bundles if stage.startswith('bundle/') else ecosystems
+    original=module.write_once
+    def interrupted(path,payload):
+        if path==output/stage: raise RuntimeError('interrupted')
+        return original(path,payload)
+    monkeypatch.setattr(module,'write_once',interrupted)
+    with pytest.raises(RuntimeError,match='interrupted'):
+        ecosystems.collect_pilot(config,output)
+    before={p:p.read_bytes() for p in output.rglob('*') if p.is_file()}
+    monkeypatch.setattr(module,'write_once',original)
+    assert ecosystems.collect_pilot(config,output)['status']=='ready_for_annotation'
+    assert all(p.read_bytes()==payload for p,payload in before.items())
+
+
+def test_incomplete_bundle_bytes_are_not_overwritten(pilot_inputs,monkeypatch):
+    from research.data import ecosystems
+    config,output,_,_=pilot_inputs
+    (output/'bundle').mkdir(parents=True)
+    damaged=output/'bundle/documents.jsonl'
+    damaged.write_bytes(b'{"partial":')
+    with pytest.raises(ValueError,match='artifact conflict'):
+        ecosystems.collect_pilot(config,output)
+    assert damaged.read_bytes()==b'{"partial":'
+    assert not (output/'manifest.json').exists()

@@ -7,9 +7,11 @@ from .manifest import digest, json_bytes, read_jsonl, verified_path, write_jsonl
 from .splits import check_training_manifest
 
 
-def materialize_bundle(manifest: dict, destination: Path) -> dict:
-    if destination.exists():
+def materialize_bundle(manifest: dict, destination: Path, *, resume=False) -> dict:
+    if destination.exists() and not resume:
         raise FileExistsError(destination)
+    if destination.exists() and any(p.name not in {'documents.jsonl','manifest.json'} for p in destination.iterdir()):
+        raise ValueError('UNEXPECTED_BUNDLE_ARTIFACT')
     role = manifest['role']
     if role not in ('train', 'dev', 'test'):
         raise ValueError('UNKNOWN_SPLIT')
@@ -22,7 +24,7 @@ def materialize_bundle(manifest: dict, destination: Path) -> dict:
             raise ValueError(issues)
     if len({d['document_id'] for d in docs}) != len(docs):
         raise ValueError('DUPLICATE_DOCUMENT_ID')
-    destination.mkdir(parents=True)
+    destination.mkdir(parents=True,exist_ok=resume)
     write_jsonl(destination / 'documents.jsonl', docs)
     result = {'schema_version':'2.0', 'role':role, 'document_count':len(docs),
               'split_digest':manifest.get('split_digest'), 'heldout':manifest.get('heldout', {}),

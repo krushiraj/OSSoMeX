@@ -41,6 +41,7 @@ class ExclusionIndex:
 
 
 def ecosystem_url(url, kind):
+    if not isinstance(url,str): raise ValueError('INVALID_ECOSYSTEMS_URL')
     parsed = urlsplit(url)
     if (parsed.scheme != 'https' or parsed.netloc != 'papers.ecosyste.ms' or parsed.query or parsed.fragment
             or not parsed.path.startswith('/api/v1/'+kind+'/')):
@@ -48,20 +49,31 @@ def ecosystem_url(url, kind):
     return url
 
 
+def exclusion_inputs(config):
+    try:
+        return [{'path':str(Path(p).resolve()),'sha256':digest(Path(p).read_bytes())}
+                for p in config['exclusion_documents']]
+    except OSError as exc:
+        raise ValueError('STALE_EXCLUSION_INPUTS: missing input; use a new versioned run') from exc
+
+
 def collect_pilot(config: dict, output: Path) -> dict:
     write_once(output/'config.json',json_bytes(config))
     if (output/'manifest.json').exists():
         report = json.loads((output/'manifest.json').read_bytes())
         for row in report['files']: verified_path(output,row)
+        if report.get('exclusion_inputs') != exclusion_inputs(config):
+            raise ValueError('STALE_EXCLUSION_INPUTS: changed input; use a new versioned run')
         return report
     max_papers = config.get('max_papers',5)
     candidate_limit = config.get('max_candidates_per_project',10)
     if (type(max_papers) is not int or not 1<=max_papers<=20 or type(candidate_limit) is not int
             or not 1<=candidate_limit<=40 or not 1<=len(config['projects'])<=10):
         raise ValueError('INVALID_PILOT_LIMITS')
+    source_inputs = exclusion_inputs(config)
+    write_once(output/'exclusion-inputs.json',json_bytes(source_inputs))
     exclusions = [d for path in config['exclusion_documents'] for d in read_jsonl(Path(path))]
     index = ExclusionIndex(exclusions)
-    source_inputs = [{'path':str(Path(p).resolve()),'sha256':digest(Path(p).read_bytes())} for p in config['exclusion_documents']]
     approvals = json.loads((ROOT/'approvals.json').read_bytes())
     policy_hash = digest((ROOT/'annotations/scibert-v2/policy.md').read_bytes())
     policy_version = 'scibert-poc-2.0'
@@ -78,6 +90,8 @@ def collect_pilot(config: dict, output: Path) -> dict:
         project_url = ecosystem_url(spec['url'],'projects')
         try:
             project, project_record = fetch(project_url)
+            if not isinstance(project,dict) or not isinstance(project.get('name'),str):
+                raise ValueError('INVALID_PROJECT_RESPONSE')
             if project.get('project_url') != project_url or not project.get('name'):
                 raise ValueError('PROJECT_IDENTITY_MISMATCH')
             candidates=[]
@@ -90,8 +104,10 @@ def collect_pilot(config: dict, output: Path) -> dict:
             issues.append({'project_url':project_url,'stage':'project','code':str(exc)})
             continue
         for candidate in candidates[:candidate_limit]:
-            paper_url = candidate.get('paper_url')
+            paper_url = None
             try:
+                if not isinstance(candidate,dict): raise ValueError('INVALID_ASSOCIATION_RECORD')
+                paper_url = candidate.get('paper_url')
                 ecosystem_url(paper_url,'papers')
                 if candidate.get('project_url') != project_url:
                     raise ValueError('ASSOCIATION_PROJECT_MISMATCH')
@@ -99,11 +115,17 @@ def collect_pilot(config: dict, output: Path) -> dict:
                 if not re.fullmatch(r'10\.\d{4,9}/[^\s"<>]+',doi): raise ValueError('INVALID_DOI')
                 if doi in seen: continue
                 paper, paper_record = fetch(component_url(API+'/papers',doi))
+                if not isinstance(paper,dict): raise ValueError('INVALID_PAPER_RESPONSE')
                 if normalize_doi(paper.get('doi')) != doi: raise ValueError('PAPER_IDENTITY_MISMATCH')
                 search_url = EPMC+'/search?'+urlencode({'query':'DOI:"'+doi+'"','format':'json','resultType':'core','pageSize':10})
                 result, search_record = fetch(search_url)
-                found = [r for r in result.get('resultList',{}).get('result',[])
-                         if normalize_doi(r.get('doi'))==doi and r.get('isOpenAccess')=='Y' and re.fullmatch(r'PMC\d+',r.get('pmcid',''))]
+                if not isinstance(result,dict) or not isinstance(result.get('resultList'),dict):
+                    raise ValueError('INVALID_PMC_SEARCH_RESPONSE')
+                rows = result['resultList'].get('result')
+                if not isinstance(rows,list) or any(not isinstance(r,dict) for r in rows):
+                    raise ValueError('INVALID_PMC_SEARCH_RESULTS')
+                found = [r for r in rows if normalize_doi(r.get('doi'))==doi and r.get('isOpenAccess')=='Y'
+                         and isinstance(r.get('pmcid'),str) and re.fullmatch(r'PMC\d+',r['pmcid'])]
                 if len(found)!=1: raise ValueError('NO_UNIQUE_OPEN_PMC_ARTICLE')
                 pmc = found[0]['pmcid']; xml_url = EPMC+'/'+pmc+'/fullTextXML'
                 raw, raw_record = fetch(xml_url,is_json=False)
@@ -149,7 +171,7 @@ def collect_pilot(config: dict, output: Path) -> dict:
     write_jsonl(output/'associations.jsonl',associations)
     write_jsonl(output/'sentences.jsonl',sentences)
     if docs:
-        materialize_bundle({'documents':docs,'role':'train','heldout':{},'split_digest':digest(json_bytes([d['source_ids'] for d in docs]))},output/'bundle')
+        materialize_bundle({'documents':docs,'role':'train','heldout':{},'split_digest':digest(json_bytes([d['source_ids'] for d in docs]))},output/'bundle',resume=True)
         write_jsonl(output/'tasks/tasks.jsonl',tasks)
         write_once(output/'tasks/manifest.json',json_bytes({'role':'train','task_count':len(tasks),'policy':{'policy_version':policy_version,'policy_hash':policy_hash},
                    'source_bundle_sha256':digest((output/'bundle/manifest.json').read_bytes()),
