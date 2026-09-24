@@ -192,3 +192,45 @@ def test_snapshot_startup_rejects_unchanged_task_state_drift(tmp_path,other_task
         validate_snapshot_store(tmp_path/'snapshot',restored)
     assert raw_rows(c)==before
     c.close()
+
+
+@pytest.mark.parametrize('signal',['version','requested','layer'])
+@pytest.mark.parametrize('metadata',['missing','downgraded'])
+@pytest.mark.parametrize('role',['train','dev'])
+def test_snapshot_restore_rejects_research_aliases_laundered_as_legacy(tmp_path,signal,metadata,role):
+    from test_review_store import policy_required_item
+    from research.annotations.snapshots import reference_rows, restore_review_snapshot
+    i=policy_required_item(signal,'demo','synthetic-contract-fixture')
+    c=store.open_store(tmp_path/'demo.sqlite'); store.import_items(c,[i],'demo')
+    bundle=tmp_path/'snapshot'; store.export_reference(c,bundle); c.close()
+    raw=read_jsonl(bundle/'store-items.jsonl'); task=json.loads(raw[0]['task'])
+    task.update(split=role,source='ecosystems'); raw[0]['task']=json.dumps(task)
+    items=[{'task':task,'annotation':json.loads(raw[0]['annotation']),
+            'annotation_revision':raw[0]['revision'],'status':raw[0]['status']}]
+    rows=reference_rows(items,[]); rows['store-items.jsonl']=raw
+    metadata_rows=read_jsonl(bundle/'metadata.jsonl')
+    next(row for row in metadata_rows if row['key']=='role')['value']=role
+    if metadata=='missing': metadata_rows=[row for row in metadata_rows if row['key']!='policy_sources']
+    rows['metadata.jsonl']=metadata_rows
+    manifest=json.loads((bundle/'manifest.json').read_bytes()); manifest['role']=role
+    if metadata=='missing': manifest.pop('policy_provenance')
+    else: manifest['policy']={'policy_version':'scibert-poc-2.0','policy_hash':'a'*64}
+    for name,values in rows.items():
+        (bundle/name).write_text(''.join(json.dumps(row)+'\n' for row in values))
+        next(row for row in manifest['files'] if row['path']==name)['sha256']=digest((bundle/name).read_bytes())
+    (bundle/'manifest.json').write_bytes(json_bytes(manifest)); restored=tmp_path/'restored.sqlite'
+    with pytest.raises(ValueError,match='POLICY_SNAPSHOT_REQUIRED'):
+        restore_review_snapshot(bundle,restored)
+    assert not restored.exists()
+
+
+def test_export_rejects_prefixed_research_alias_store_without_frozen_policy(tmp_path):
+    from test_review_store import policy_required_item
+    i=policy_required_item('version','demo','synthetic-contract-fixture')
+    c=store.open_store(tmp_path/'old.sqlite'); store.import_items(c,[i],'demo')
+    task=json.loads(c.execute('SELECT task FROM items').fetchone()[0]); task.update(split='train',source='ecosystems')
+    c.execute('UPDATE items SET task=?',(json.dumps(task),)); c.execute("UPDATE metadata SET value='train' WHERE key='role'")
+    before=raw_rows(c); destination=tmp_path/'snapshot'
+    with pytest.raises(ValueError,match='POLICY_SNAPSHOT_REQUIRED'): store.export_reference(c,destination)
+    assert not destination.exists() and raw_rows(c)==before
+    c.close()

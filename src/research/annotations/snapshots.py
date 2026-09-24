@@ -57,14 +57,27 @@ def write_policy_provenance(destination: Path, provenance: dict) -> dict:
         'policy_provenance':{'kind':'frozen_policy_sources'},'files':files}
 
 
-def validate_item_policy(items: list[dict], provenance: dict) -> None:
-    if provenance==LEGACY_PROVENANCE: return
-    policy=provenance['policy']
-    prompt_hashes={r['sha256'] for r in provenance['prompt_sources'].values()}
+def validate_item_policy(items: list[dict], provenance: dict, role: str) -> None:
+    if role not in ('train','dev','demo'): raise ValueError('SPLIT_NOT_PERMITTED')
+    legacy=provenance==LEGACY_PROVENANCE
+    if not legacy and (not isinstance(provenance,dict) or provenance.get('kind')!='frozen_policy_sources'):
+        raise ValueError('POLICY_SNAPSHOT_REQUIRED')
     for item in items:
         task=item['task']
+        if task.get('split')!=role: raise ValueError('SPLIT_CONFLICT')
+        requires_alias_policy=(task.get('policy_version')=='scibert-poc-2.1'
+                               or 'aliases' in task.get('requested_fields',[])
+                               or 'alias_annotations' in item['annotation'])
+        synthetic=role=='demo' and task.get('source')=='synthetic-contract-fixture'
+        if legacy:
+            if requires_alias_policy and not synthetic: raise ValueError('POLICY_SNAPSHOT_REQUIRED')
+            continue
+        policy=provenance['policy']
+        if requires_alias_policy and not synthetic and policy.get('policy_version')!='scibert-poc-2.1':
+            raise ValueError('TASK_POLICY_MISMATCH')
         if any(task.get(key)!=policy[key] for key in ('policy_version','policy_hash')):
             raise ValueError('TASK_POLICY_MISMATCH')
+        prompt_hashes={r['sha256'] for r in provenance['prompt_sources'].values()}
         if item['annotation'].get('annotator',{}).get('prompt_hash') not in prompt_hashes:
             raise ValueError('PROMPT_HASH_MISMATCH')
 
@@ -164,7 +177,7 @@ def read_review_snapshot(bundle: Path) -> tuple[dict, dict]:
     try:
         items=_validate_store_rows(data['store-items.jsonl'],manifest['role'])
         _validate_decision_rows(data['decision-records.jsonl'],items)
-        validate_item_policy(items,provenance)
+        validate_item_policy(items,provenance,manifest['role'])
         if any(data[name]!=rows for name,rows in reference_rows(items,data['decision-records.jsonl']).items()):
             raise ValueError('SNAPSHOT_SIDECAR_MISMATCH')
     except (KeyError,TypeError,AttributeError) as exc:

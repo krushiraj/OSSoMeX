@@ -9,7 +9,9 @@ const reportAlias = (text, error = false) => { $('alias-message').textContent = 
 const api = async (path, body) => {
   const response = await fetch(path, body === undefined ? {} : {method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrf}, body: JSON.stringify(body)});
   const data = await response.json();
-  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+  if (!response.ok) throw new Error(data.error === 'ALIAS_MEMBER_IN_USE'
+    ? 'Remove the alias relations referencing this occurrence before changing its span or deleting it.'
+    : data.error || `HTTP ${response.status}`);
   return data;
 };
 const safe = action => async event => { try { await action(event); } catch (error) { report(error.message, true); } };

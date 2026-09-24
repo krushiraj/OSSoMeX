@@ -215,7 +215,8 @@ def test_linked_span_edit_rejected_no_change_save_keeps_alias_and_stale_tab(page
     page.locator('#name-start').fill('68')
     page.locator('#reason').fill('Try moving a linked endpoint')
     page.get_by_role('button',name='Save occurrence',exact=True).click()
-    page.get_by_text('ALIAS_MEMBER_IN_USE',exact=False).wait_for()
+    expect(page.locator('#message')).to_have_text(
+        'Remove the alias relations referencing this occurrence before changing its span or deleting it.')
     page.locator('#name-start').fill('67')
     page.locator('#reason').fill('No span change; preserve relation')
     page.get_by_role('button',name='Save occurrence',exact=True).click()

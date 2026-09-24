@@ -9,7 +9,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from ..data.manifest import read_jsonl, verified_path
 from .review_store import ReviewError, apply_decision, export_reference, get_item, import_items, open_store, queue
 from .aliases import build_alias_groups
-from .snapshots import read_policy_provenance, validate_snapshot_store
+from .snapshots import read_policy_provenance, validate_item_policy, validate_snapshot_store
 
 
 def check_bind(host):
@@ -34,8 +34,10 @@ def create_server(bundle: Path, store: Path, host='127.0.0.1', port=8765):
     else:
         for row in manifest['files']: verified_path(bundle,row)
         provenance=read_policy_provenance(bundle,manifest)
+        items=read_jsonl(bundle/'items.jsonl')
+        validate_item_policy(items,provenance,manifest['role'])
         c=open_store(store)
-        try: import_items(c,read_jsonl(bundle/'items.jsonl'),manifest['role'],provenance)
+        try: import_items(c,items,manifest['role'],provenance)
         finally:c.close()
     token=secrets.token_urlsafe(32)
     assets=Path(__file__).parent/'web'

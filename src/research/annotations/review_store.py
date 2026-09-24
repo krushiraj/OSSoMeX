@@ -39,7 +39,8 @@ def open_store(path: Path) -> sqlite3.Connection:
 def import_items(c, items: list[dict], role: str, policy_provenance: dict | None = None) -> None:
     from .snapshots import LEGACY_PROVENANCE, validate_item_policy
     provenance=policy_provenance if policy_provenance is not None else dict(LEGACY_PROVENANCE)
-    validate_item_policy(items,provenance)
+    try: validate_item_policy(items,provenance,role)
+    except ValueError as exc: raise ReviewError(str(exc)) from exc
     if role not in ('train','dev','demo'):
         raise ReviewError('SPLIT_NOT_PERMITTED')
     c.execute('BEGIN IMMEDIATE')
@@ -200,7 +201,7 @@ def apply_decision(c, decision: dict) -> dict:
 
 
 def export_reference(c, destination: Path) -> dict:
-    from .snapshots import LEGACY_PROVENANCE, SNAPSHOT_VERSION, reference_rows, write_policy_provenance
+    from .snapshots import LEGACY_PROVENANCE, SNAPSHOT_VERSION, reference_rows, validate_item_policy, write_policy_provenance
     if destination.exists(): raise FileExistsError(destination)
     c.execute('BEGIN')
     try:
@@ -212,11 +213,12 @@ def export_reference(c, destination: Path) -> dict:
         c.commit()
     except Exception:
         c.rollback();raise
+    provenance=json.loads(next((row['value'] for row in metadata if row['key']=='policy_sources'),json.dumps(LEGACY_PROVENANCE)))
+    validate_item_policy(items,provenance,role)
     files=reference_rows(items,decision_records)
     files.update({'store-items.jsonl':store_items,'decision-records.jsonl':decision_records,'metadata.jsonl':metadata})
     destination.mkdir(parents=True)
     for name,rows in files.items():write_jsonl(destination/name,rows)
-    provenance=json.loads(next((row['value'] for row in metadata if row['key']=='policy_sources'),json.dumps(LEGACY_PROVENANCE)))
     sources=write_policy_provenance(destination,provenance)
     manifest={**sources,'role':role,'quality':'provisional','task_count':len(items), 'decision_count':len(decision_records),
               'snapshot_schema_version':SNAPSHOT_VERSION,'alias_schema_version':'1.0',

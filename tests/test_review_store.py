@@ -24,6 +24,38 @@ def decision(task, ident='decision-1', revision=1, **extra):
             'action':'accept_passage','reason':'Checked the full passage','value':None,**extra}
 
 
+def policy_required_item(signal='version',role='train',source='ecosystems'):
+    i=alias_item(); original=i['task']
+    policy={'policy_version':'scibert-poc-2.1' if signal=='version' else 'scibert-poc-2.0',
+            'policy_hash':'a'*64,'alias_schema_version':'1.0' if signal=='requested' else None}
+    i['task']=make_tasks({'document_id':original['document_id'],'text':original['text'],
+                          'split':role,'source':source},policy)[0]
+    i['annotation'].update({key:i['task'][key] for key in ('task_id','policy_version')})
+    if signal=='layer': i['annotation']['alias_annotations']['relations']=[]
+    else: i['annotation'].pop('alias_annotations')
+    return i
+
+
+@pytest.mark.parametrize('signal',['version','requested','layer'])
+@pytest.mark.parametrize('role,source',[('train','ecosystems'),('dev','ecosystems'),
+    ('train','synthetic-contract-fixture'),('demo','ecosystems')])
+def test_store_requires_frozen_policy_for_nonexempt_alias_tasks(tmp_path,signal,role,source):
+    i=policy_required_item(signal,role,source); c=store.open_store(tmp_path/'r.sqlite')
+    with pytest.raises(ValueError,match='POLICY_SNAPSHOT_REQUIRED'):
+        store.import_items(c,[i],role)
+    for table in ('items','decisions','metadata'):
+        assert c.execute(f'SELECT count(*) FROM {table}').fetchone()[0]==0
+    c.close()
+
+
+@pytest.mark.parametrize('role',['train','dev'])
+def test_store_accepts_legacy_research_policy_without_aliases(tmp_path,role):
+    i=item(); i['task'].update(split=role,source='ecosystems')
+    c=store.open_store(tmp_path/'r.sqlite'); store.import_items(c,[i],role)
+    assert c.execute('SELECT count(*) FROM items').fetchone()[0]==1
+    c.close()
+
+
 def test_stale_revision_idempotence_restart_and_export(tmp_path):
     path=tmp_path/'review.sqlite'; connection=store.open_store(path)
     i=item('No software.'); store.import_items(connection,[i],role='demo')
@@ -224,7 +256,7 @@ def test_alias_mutations_require_task_policy_capability(tmp_path,capability):
 
 def test_alias_graph_contradiction_and_targeted_replacement_are_atomic(tmp_path):
     from test_aliases import _three_names
-    task,occurrences,pair=_three_names(); task.update(split='demo',requested_fields=['aliases'])
+    task,occurrences,pair=_three_names(); task.update(split='demo',source='synthetic-contract-fixture',requested_fields=['aliases'])
     i={'task':task,'annotation':{'occurrences':occurrences,'annotation_revision':1,
         'alias_annotations':{'schema_version':'1.0','relations':[pair(0,1,preferred=0),pair(0,2,'not_alias')]}}}
     c=store.open_store(tmp_path/'r.sqlite'); store.import_items(c,[i],'demo'); before=store.get_item(c,task['task_id'])

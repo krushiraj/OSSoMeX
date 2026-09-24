@@ -123,3 +123,19 @@ def test_snapshot_startup_rejects_missing_or_mismatched_store_without_writes(tmp
     elif invalid=='empty': assert path.read_bytes()==b''
     else:
         c=store.open_store(path); assert raw_rows(c)==before; c.close()
+
+
+@pytest.mark.parametrize('signal',['version','requested','layer'])
+@pytest.mark.parametrize('metadata',['missing','downgraded'])
+def test_review_bundle_requires_frozen_policy_before_creating_store(tmp_path,signal,metadata):
+    from test_review_store import policy_required_item
+    i=policy_required_item(signal); bundle=tmp_path/'bundle'; bundle.mkdir()
+    write_jsonl(bundle/'items.jsonl',[i])
+    manifest={'role':'train','files':[{'path':'items.jsonl','sha256':digest((bundle/'items.jsonl').read_bytes())}]}
+    if metadata=='downgraded':
+        manifest.update(policy={'policy_version':'scibert-poc-2.0','policy_hash':'a'*64},
+                        policy_provenance={'kind':'legacy_no_frozen_policy_source'})
+    (bundle/'manifest.json').write_bytes(json_bytes(manifest)); path=tmp_path/'review.sqlite'
+    with pytest.raises(ValueError,match='POLICY_SNAPSHOT_REQUIRED'):
+        http=server.create_server(bundle,path,port=0); http.server_close()
+    assert not path.exists()
