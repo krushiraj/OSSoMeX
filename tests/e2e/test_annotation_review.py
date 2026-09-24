@@ -1,5 +1,6 @@
 import threading
 import json
+import sqlite3
 from copy import deepcopy
 from pathlib import Path
 
@@ -48,7 +49,7 @@ def review_app(tmp_path,request):
              'known':{'software':True,'versions':True,'created':False,'used':True,'shared':False,'sentiment':True},
              'evidence':{'intents':[{'start':0,'end':10}],'sentiment':[{'start':11,'end':26}]},'review':{'status':'unreviewed','reasons':[]}}]
     item={'task':task,'annotation':annotation}
-    if variant in ('alias','alias_new','owned_context','fixture-negative','navigation'):
+    if variant in ('alias','alias_new','owned_context','fixture-negative','navigation','alias_pair'):
         item=alias_item('design-negative' if variant=='fixture-negative' else 'design-explicit-icekat')
         if variant=='alias_new':
             item['annotation']['alias_annotations']['relations']=[]
@@ -87,6 +88,8 @@ def review_app(tmp_path,request):
     items=[item]
     if variant=='navigation':
         items.append(alias_item('design-negative'))
+    if variant=='alias_pair':
+        items.append(alias_item('design-unknown-repeated-name'))
     write_jsonl(bundle/'items.jsonl',items)
     write_once(bundle/'manifest.json',json_bytes({'role':'demo','files':[{'path':'items.jsonl','sha256':digest((bundle/'items.jsonl').read_bytes())}]}))
     database=tmp_path/'review.sqlite'
@@ -158,6 +161,50 @@ def test_alias_relation_create_reject_unresolve_remove_and_export(page,review_ap
     assert page.request.get(url+'/api/tasks/'+tid).json()['annotation']['alias_annotations']['relations']==[]
 
 
+@pytest.mark.parametrize('review_app',['alias_pair'],indirect=True)
+def test_alias_draft_resets_when_opening_another_alias_task(page,review_app):
+    app,_,database=review_app;url=f'http://127.0.0.1:{app.server_port}'
+    page.goto(url)
+    page.locator('.queue-item').filter(has_text='design-explicit-icekat').get_by_role('button',name='Open passage').click()
+    page.get_by_role('button',name='Show proposed labels').click()
+    page.get_by_role('button',name='Open alias relation').click()
+    page.locator('#alias-type').select_option('explicit_alternative_name')
+    page.locator('#alias-decision').select_option('not_alias')
+    page.locator('#alias-evidence-start').fill('0')
+    page.locator('#alias-evidence-end').fill('70')
+    page.locator('#alias-reason').fill('Draft from the ICEKAT task')
+    page.locator('.queue-item').filter(has_text='design-unknown-repeated-name').get_by_role('button',name='Open passage').click()
+    page.get_by_role('button',name='Show proposed labels').click()
+    expect(page.locator('#alias-type')).to_have_value('abbreviation')
+    expect(page.locator('#alias-decision')).to_have_value('alias')
+    expect(page.locator('#alias-evidence-start')).to_have_value('')
+    expect(page.locator('#alias-evidence-end')).to_have_value('')
+    expect(page.locator('#alias-reason')).to_have_value('')
+    with sqlite3.connect(database) as connection:
+        before=connection.execute('SELECT count(*) FROM decisions').fetchone()[0]
+    page.get_by_role('button',name='Accept alias').click()
+    page.get_by_text('Open an alias relation first.',exact=True).wait_for()
+    with sqlite3.connect(database) as connection:
+        assert connection.execute('SELECT count(*) FROM decisions').fetchone()[0]==before
+    page.get_by_role('button',name='Open alias relation').click()
+    expect(page.locator('#alias-type')).to_have_value('explicit_alternative_name')
+    expect(page.locator('#alias-decision')).to_have_value('unresolved')
+    expect(page.locator('#alias-evidence-start')).to_have_value('0')
+    expect(page.locator('#alias-evidence-end')).to_have_value('73')
+
+
+@pytest.mark.parametrize('review_app',['alias_new'],indirect=True)
+def test_keyboard_activation_uses_current_alias_evidence_selection(page,review_app):
+    app,_,_=review_app;page.goto(f'http://127.0.0.1:{app.server_port}')
+    page.get_by_role('button',name='Open passage').first.click()
+    page.get_by_role('button',name='Show proposed labels').click()
+    select_passage(page,0,75)
+    page.get_by_role('button',name='Use selection as alias evidence').focus()
+    page.keyboard.press('Enter')
+    expect(page.locator('#alias-evidence-start')).to_have_value('0')
+    expect(page.locator('#alias-evidence-end')).to_have_value('75')
+
+
 @pytest.mark.parametrize('review_app',['alias'],indirect=True)
 def test_linked_span_edit_rejected_no_change_save_keeps_alias_and_stale_tab(page,browser,review_app):
     app,_,_=review_app;url=f'http://127.0.0.1:{app.server_port}'
@@ -225,7 +272,7 @@ def test_owned_context_legend_stays_outside_exact_source_text(page,review_app):
 
 @pytest.mark.parametrize('review_app',['owned_context'],indirect=True)
 def test_owned_context_nested_range_preserves_text_offsets_and_rejects_context_name(page,review_app):
-    app,_,_=review_app;url=f'http://127.0.0.1:{app.server_port}'
+    app,_,database=review_app;url=f'http://127.0.0.1:{app.server_port}'
     page.goto(url);page.get_by_role('button',name='Open passage').first.click()
     page.get_by_role('button',name='Show proposed labels').click()
     tid=page.request.get(url+'/api/queue').json()['items'][0]['task_id']
@@ -242,9 +289,13 @@ def test_owned_context_nested_range_preserves_text_offsets_and_rejects_context_n
       r.setStart(node,3); r.setEnd(node,14);
       const s=window.getSelection(); s.removeAllRanges(); s.addRange(r);
     }""")
+    with sqlite3.connect(database) as connection:
+        before=connection.execute('SELECT count(*) FROM decisions').fetchone()[0]
     page.get_by_role('button',name='Add selected name').click()
     page.get_by_text('Select a name inside the owned region; surrounding text is context only.',exact=True).wait_for()
     assert page.request.get(url+'/api/tasks/'+tid).json()['annotation_revision']==1
+    with sqlite3.connect(database) as connection:
+        assert connection.execute('SELECT count(*) FROM decisions').fetchone()[0]==before
 
 
 @pytest.mark.parametrize('review_app',['navigation'],indirect=True)

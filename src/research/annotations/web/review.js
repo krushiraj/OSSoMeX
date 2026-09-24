@@ -116,15 +116,22 @@ const renderPassage = () => {
   $('reveal').hidden = revealed;
   renderAliases();
 };
+const resetAliasDraft = () => {
+  aliasTarget = null; aliasEvidenceSpans = [];
+  $('alias-left').value = ''; $('alias-right').value = ''; $('alias-preferred').value = '';
+  $('alias-type').value = 'abbreviation'; $('alias-decision').value = 'alias';
+  $('alias-evidence-start').value = ''; $('alias-evidence-end').value = '';
+  $('alias-evidence-preview').textContent = ''; $('alias-reason').value = '';
+};
 const openTask = async id => {
-  current = await api(`/api/tasks/${encodeURIComponent(id)}`); target = null; aliasTarget = null; aliasEvidenceSpans = []; selection = null;
+  current = await api(`/api/tasks/${encodeURIComponent(id)}`); target = null; selection = null; resetAliasDraft();
   revealed = !current.task.whole_passage_audit;
   $('workspace').hidden = false; $('empty').hidden = true; $('editor-form').hidden = true;
   $('source-title').textContent = current.task.document_id;
   const region = current.task.annotation_region;
   $('boundaries').textContent = `Owned region ${region.start}:${region.end}. Revision ${current.annotation_revision}. ${current.task.split} / ${current.task.source}`;
   $('selection-label').textContent = 'Select a proposed name or add one from the passage.';
-  $('passage-reason').value = ''; $('alias-reason').value = ''; report(''); reportAlias(''); renderPassage();
+  $('passage-reason').value = ''; report(''); reportAlias(''); renderPassage();
 };
 const showVersions = () => {
   $('version-list').replaceChildren();
@@ -225,6 +232,7 @@ $('alias-left').onchange = updateAliasPreference;
 for (const id of ['alias-evidence-start', 'alias-evidence-end']) $(id).oninput = showAliasEvidence;
 $('use-alias-evidence').onpointerdown = captureSelection;
 $('use-alias-evidence').onclick = safeAlias(() => {
+  captureSelection();
   if (!selection) throw new Error('Select definition text in the source passage first.');
   $('alias-evidence-start').value = selection.start; $('alias-evidence-end').value = selection.end; showAliasEvidence();
 });
@@ -244,6 +252,7 @@ $('editor-form').onsubmit = safe(async event => {
   await save('upsert_occurrence', {value});
 });
 $('passage').onmouseup = captureSelection;
+$('passage').onkeyup = captureSelection;
 $('add-name').onpointerdown = captureSelection;
 $('add-name').onclick = safe(() => edit(null));
 $('add-version').onpointerdown = captureSelection;
