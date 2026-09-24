@@ -1,0 +1,13 @@
+{
+  "schema_version": "2.0", "seed": 42,
+  "quotas": {
+    "sofair": {"train":40,"dev":15,"test":25},
+    "somesci": {"train":20,"dev":7,"test":13},
+    "ecosystems": {"train":10,"dev":4,"test":6},
+    "openalex": {"train":10,"dev":4,"test":6}
+  },
+  "historical_documents": ["inputs/sofair/sofair_docs.jsonl", "inputs/somesci/somesci_docs.jsonl"],
+  "near_duplicate_jaccard": 0.85,
+  "text_access_decisions": null,
+  "overlap_decisions": null
+}
