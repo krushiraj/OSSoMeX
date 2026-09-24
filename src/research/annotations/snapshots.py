@@ -4,6 +4,7 @@ import base64
 import json
 from pathlib import Path
 import re
+import sqlite3
 
 from ..data.manifest import digest, json_bytes, read_jsonl, verified_path, write_once
 from .alias_decisions import validate_annotation_aliases
@@ -138,9 +139,7 @@ def _validate_decision_rows(rows: list[dict], items: list[dict]) -> None:
         raise ValueError('SNAPSHOT_REVISION_MISMATCH')
 
 
-def restore_review_snapshot(bundle: Path, destination: Path) -> dict:
-    from .review_store import open_store
-    if destination.exists(): raise FileExistsError(destination)
+def read_review_snapshot(bundle: Path) -> tuple[dict, dict]:
     manifest=json.loads((bundle/'manifest.json').read_bytes())
     required={'store-items.jsonl','decision-records.jsonl','metadata.jsonl','items.jsonl',
               'occurrences.jsonl','coverage.jsonl','decisions.jsonl','aliases.jsonl','alias_groups.jsonl'}
@@ -172,6 +171,40 @@ def restore_review_snapshot(bundle: Path, destination: Path) -> dict:
         raise ValueError('SNAPSHOT_INVALID') from exc
     if manifest.get('task_count')!=len(items) or manifest.get('decision_count')!=len(data['decision-records.jsonl']):
         raise ValueError('SNAPSHOT_COUNT_MISMATCH')
+    return manifest,data
+
+
+def validate_snapshot_store(bundle: Path, store: Path) -> None:
+    manifest,data=read_review_snapshot(bundle)
+    if not store.is_file(): raise ValueError('SNAPSHOT_STORE_REQUIRED: restore the snapshot first')
+    c=None
+    try:
+        c=sqlite3.connect(store.resolve().as_uri()+'?mode=ro',uri=True)
+        c.row_factory=sqlite3.Row; c.execute('BEGIN')
+        rows=[dict(row) for row in c.execute('SELECT * FROM items ORDER BY task_id')]
+        decisions=[dict(row) for row in c.execute('SELECT * FROM decisions ORDER BY rowid')]
+        metadata=[dict(row) for row in c.execute('SELECT * FROM metadata ORDER BY rowid')]
+        if metadata!=data['metadata.jsonl']: raise ValueError('SNAPSHOT_STORE_METADATA_MISMATCH')
+        source_keys=('task_id','original_hash','task')
+        sources=[tuple(row[key] for key in source_keys) for row in rows]
+        expected=[tuple(row[key] for key in source_keys) for row in data['store-items.jsonl']]
+        if sources!=expected: raise ValueError('SNAPSHOT_STORE_SOURCE_MISMATCH')
+        items=_validate_store_rows(rows,manifest['role'])
+        _validate_decision_rows(decisions,items)
+        snapshot_decisions=data['decision-records.jsonl']
+        if decisions[:len(snapshot_decisions)]!=snapshot_decisions:
+            raise ValueError('SNAPSHOT_STORE_HISTORY_MISMATCH')
+    except (sqlite3.DatabaseError,KeyError,TypeError,AttributeError) as exc:
+        raise ValueError('SNAPSHOT_STORE_INVALID') from exc
+    finally:
+        if c is not None: c.close()
+
+
+def restore_review_snapshot(bundle: Path, destination: Path) -> dict:
+    from .review_store import open_store
+    if destination.exists(): raise FileExistsError(destination)
+    manifest,data=read_review_snapshot(bundle)
+    metadata=data['metadata.jsonl']; items=data['items.jsonl']
     destination.parent.mkdir(parents=True,exist_ok=True)
     with destination.open('xb'): pass
     c=None

@@ -49,3 +49,77 @@ def test_alias_http_capability_decision_and_restart(tmp_path):
     assert 'alias_groups' not in store.get_item(c,i['task']['task_id'])
     assert c.execute('SELECT count(*) FROM decisions').fetchone()[0]==1
     c.close()
+
+
+def test_restored_snapshot_serves_without_original_bundle_and_preserves_history(tmp_path):
+    from test_alias_snapshots import raw_rows
+    from research.annotations.snapshots import restore_review_snapshot
+    i=alias_item(); source_bundle=tmp_path/'source-bundle'; source_bundle.mkdir()
+    write_jsonl(source_bundle/'items.jsonl',[i])
+    (source_bundle/'manifest.json').write_bytes(json_bytes({'role':'demo','files':[
+        {'path':'items.jsonl','sha256':digest((source_bundle/'items.jsonl').read_bytes())}]}))
+    initial=server.create_server(source_bundle,tmp_path/'first.sqlite',port=0); initial.server_close()
+    c=store.open_store(tmp_path/'first.sqlite')
+    rid=i['annotation']['alias_annotations']['relations'][0]['relation_id']
+    payload=decision(i['task'],action='accept_alias',target_relation_id=rid)
+    result=store.apply_decision(c,payload); before=raw_rows(c)
+    bundle=tmp_path/'snapshot'; path=tmp_path/'restored.sqlite'
+    store.export_reference(c,bundle); c.close()
+    restore_review_snapshot(bundle,path)
+    (source_bundle/'items.jsonl').unlink(); (source_bundle/'manifest.json').unlink(); source_bundle.rmdir()
+    (tmp_path/'first.sqlite').unlink()
+    assert not source_bundle.exists() and not (tmp_path/'first.sqlite').exists()
+    for restarted in (False,True):
+        http=server.create_server(bundle,path,port=0)
+        thread=Thread(target=http.serve_forever,daemon=True); thread.start()
+        base=f'http://127.0.0.1:{http.server_port}'
+        try:
+            with urlopen(base+'/api/session') as response: session=json.load(response)
+            with urlopen(base+'/api/tasks/'+i['task']['task_id']) as response: current=json.load(response)
+            assert session['role']=='demo'
+            assert current['annotation_revision']==(3 if restarted else 2)
+            assert len(current['alias_groups'])==(0 if restarted else 1)
+            assert current['annotation']['alias_annotations']['relations'][0]['decision']==('not_alias' if restarted else 'alias')
+            request=Request(base+'/api/decisions',data=json.dumps(payload).encode(),headers={
+                'Content-Type':'application/json','Origin':base,'X-CSRF-Token':session['csrf_token']})
+            with urlopen(request) as response: assert json.load(response)==result
+            c=store.open_store(path); current_rows=raw_rows(c); c.close()
+            if not restarted:
+                assert current_rows==before
+                request=Request(base+'/api/decisions',data=json.dumps(decision(i['task'],'new-review',2,
+                    action='reject_alias',target_relation_id=rid)).encode(),headers={
+                    'Content-Type':'application/json','Origin':base,'X-CSRF-Token':session['csrf_token']})
+                with urlopen(request) as response: assert json.load(response)['annotation_revision']==3
+            else:
+                assert current_rows['decisions'][0]==before['decisions'][0]
+                assert len(current_rows['decisions'])==2
+        finally: http.shutdown(); thread.join(); http.server_close()
+
+
+@pytest.mark.parametrize('invalid',['missing','empty','role','source','metadata','task','different_history'])
+def test_snapshot_startup_rejects_missing_or_mismatched_store_without_writes(tmp_path,invalid):
+    from test_alias_snapshots import raw_rows, snapshot
+    from research.annotations.snapshots import restore_review_snapshot
+    i,payload,result,before=snapshot(tmp_path); bundle=tmp_path/'snapshot'; path=tmp_path/'restored.sqlite'
+    if invalid=='missing': pass
+    elif invalid=='empty': path.touch()
+    else:
+        restore_review_snapshot(bundle,path); c=store.open_store(path)
+        if invalid=='role': c.execute("UPDATE metadata SET value='train' WHERE key='role'")
+        elif invalid=='source': c.execute("UPDATE items SET original_hash=?",('f'*64,))
+        elif invalid=='metadata': c.execute("UPDATE metadata SET value='{}' WHERE key='policy_sources'")
+        elif invalid=='task':
+            task=json.loads(c.execute('SELECT task FROM items').fetchone()[0]); task['source']='other'
+            c.execute('UPDATE items SET task=?',(json.dumps(task),))
+        else:
+            c.execute('DROP TRIGGER decisions_no_update')
+            changed={**payload,'reason':'rewritten history'}
+            c.execute('UPDATE decisions SET payload=?',(json.dumps(changed),))
+        before=raw_rows(c); c.close()
+    with pytest.raises(ValueError):
+        http=server.create_server(bundle,path,port=0)
+        http.server_close()
+    if invalid=='missing': assert not path.exists()
+    elif invalid=='empty': assert path.read_bytes()==b''
+    else:
+        c=store.open_store(path); assert raw_rows(c)==before; c.close()

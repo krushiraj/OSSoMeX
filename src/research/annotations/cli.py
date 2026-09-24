@@ -21,7 +21,11 @@ def register(subparsers):
     p=sub.add_parser('import')
     for name in ('tasks','replies','output'): p.add_argument('--'+name,type=Path,required=True)
     p.add_argument('--selection',type=Path); p.set_defaults(func=run)
-    p=sub.add_parser('review'); p.add_argument('--bundle',type=Path,required=True)
+    p=sub.add_parser('review',description='Review an import bundle, or resume a restored snapshot store.',
+                     epilog='Snapshot recovery: research annotate restore --bundle SNAPSHOT --store NEW_DB; '
+                            'then research annotate review --bundle SNAPSHOT --store NEW_DB. '
+                            'Snapshot review requires an existing restored store and never reimports its items.')
+    p.add_argument('--bundle',type=Path,required=True)
     p.add_argument('--store',type=Path,required=True); p.add_argument('--host',default='127.0.0.1')
     p.add_argument('--port',type=int,default=8765); p.set_defaults(func=run)
     p=sub.add_parser('restore'); p.add_argument('--bundle',type=Path,required=True)
