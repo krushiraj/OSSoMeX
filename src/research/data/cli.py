@@ -5,13 +5,13 @@ from .acquire import acquire_sources, audit_sources
 from .manifest import json_bytes, read_jsonl, write_once
 from .corpus import apply_access_decision, build_corpus, load_corpus
 from .splits import SplitError, assign_splits, group_works, identifiers
-from .bundles import materialize_bundle
+from .bundles import load_bundle, materialize_bundle
 
 
 def register(subparsers):
     parser = subparsers.add_parser('data')
     commands = parser.add_subparsers(dest='data_command', required=True)
-    for name, argument in [('acquire', 'config'), ('audit', 'manifest'), ('build', 'manifest')]:
+    for name, argument in [('acquire', 'config'), ('audit', 'manifest'), ('build', 'manifest'), ('ecosystems','config')]:
         p = commands.add_parser(name)
         p.add_argument('--' + argument, type=Path, required=True)
         p.add_argument('--output', type=Path, required=True)
@@ -35,6 +35,11 @@ def run(args):
             d['historical'] = d['source_record_id'].upper() in history_ids or bool(identifiers(d)&history_keys) or d['text'] in history_text
             if d['document_id'] in decisions:
                 docs[i] = apply_access_decision(d, decisions[d['document_id']])
+        for path in config.get('training_reservations',[]):
+            _,reserved = load_bundle(Path(path),roles=('train',))
+            for d in reserved:
+                docs.append({**d,'document_id':'exposure:'+d['document_id']+'|'+d['text_revision'],
+                             'development_exposed':True,'fulltext_eligible':False})
         grouped = group_works(docs)
         # No unresolved pair can be implicitly waived by a CLI run.
         if config.get('overlap_decisions'):
@@ -54,10 +59,14 @@ def run(args):
             summary['status'] = 'ready'
             write_once(args.output/'manifest.json', json_bytes(summary))
             result = summary
+    elif args.data_command == 'ecosystems':
+        from .ecosystems import collect_pilot
+        result = collect_pilot(json.loads(args.config.read_bytes()),args.output)
+        result = {k:v for k,v in result.items() if k!='files'}
     elif args.data_command == 'build':
         result = build_corpus(args.manifest, args.output)
     else:
         result = (acquire_sources(args.config, args.output) if args.data_command == 'acquire'
                   else audit_sources(args.manifest, args.output))
     print(json.dumps(result, indent=2))
-    return 0 if result['status'] in ('success', 'ready', 'built_pending_eligibility') else 2
+    return 0 if result['status'] in ('success', 'ready', 'built_pending_eligibility','ready_for_annotation') else 2

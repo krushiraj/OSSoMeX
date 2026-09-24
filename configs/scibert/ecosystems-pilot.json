@@ -1,0 +1,18 @@
+{
+  "projects": [
+    {"url": "https://papers.ecosyste.ms/api/v1/projects/pypi/scipy"},
+    {"url": "https://papers.ecosyste.ms/api/v1/projects/pypi/pandas"},
+    {"url": "https://papers.ecosyste.ms/api/v1/projects/pypi/imagej"},
+    {"url": "https://papers.ecosyste.ms/api/v1/projects/pypi/scikit-learn"},
+    {"url": "https://papers.ecosyste.ms/api/v1/projects/pypi/lmfit"}
+  ],
+  "max_papers": 5,
+  "max_candidates_per_project": 10,
+  "max_sentences_per_paper": 4,
+  "seed": 42,
+  "exclusion_documents": [
+    "data/scibert-v2/corpus-001/documents.jsonl",
+    "inputs/sofair/sofair_docs.jsonl",
+    "inputs/somesci/somesci_docs.jsonl"
+  ]
+}

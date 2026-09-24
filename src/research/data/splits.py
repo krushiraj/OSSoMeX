@@ -133,6 +133,8 @@ def assign_splits(groups: list[dict], quotas: dict, seed: int) -> dict:
             candidates = []
             for g, d in pool:
                 native = {x.get('native_split') for x in g['documents']}
+                if role != 'train' and any(x.get('development_exposed') for x in g['documents']):
+                    continue
                 if g['work_group_id'] in used:
                     continue
                 if role == 'train' and native & {'test','dev','devel','validation'}:
