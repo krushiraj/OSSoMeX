@@ -32,13 +32,15 @@
     <form id="editor-form" hidden>
       <div class="pair"><label>Name start<input id="name-start" type="number" min="0" required></label><label>Name end<input id="name-end" type="number" min="1" required></label></div>
       <fieldset><legend>Author intent</legend><div class="intent-options">
-        <label><input type="checkbox" id="intent-created"> Created</label><label><input type="checkbox" id="intent-used"> Used</label>
-        <label><input type="checkbox" id="intent-shared"> Shared</label><label><input type="checkbox" id="intent-mentioned"> Mentioned only</label>
-      </div><p class="hint">Leave unchecked to keep intent unresolved.</p></fieldset>
+        <div><label><input type="checkbox" id="intent-created"> Created</label><label>Created decision<select id="known-created"><option value="unknown">Unresolved</option><option value="known">Checked</option></select></label></div>
+        <div><label><input type="checkbox" id="intent-used"> Used</label><label>Used decision<select id="known-used"><option value="unknown">Unresolved</option><option value="known">Checked</option></select></label></div>
+        <div><label><input type="checkbox" id="intent-shared"> Shared</label><label>Shared decision<select id="known-shared"><option value="unknown">Unresolved</option><option value="known">Checked</option></select></label></div>
+        <label><input type="checkbox" id="intent-mentioned"> Mentioned only</label>
+      </div><p class="hint">Checked + unchecked means a known negative. Unresolved is masked. Mentioned only checks all three decisions as negative.</p></fieldset>
       <label>Sentiment<select id="sentiment"><option value="">Unresolved</option><option value="not_expressed">Not expressed</option><option value="positive">Positive</option><option value="negative">Negative</option><option value="mixed">Mixed</option></select></label>
       <label>Version decision<select id="version-state"><option value="unannotated">Unresolved / not checked</option><option value="absent">Checked: no explicit version</option><option value="explicit">Explicit links</option><option value="ambiguous">Ambiguous</option></select></label>
       <div id="version-list"></div>
-      <fieldset><legend>Supporting evidence</legend><div class="pair"><label>Start<input id="evidence-start" type="number" min="0"></label><label>End<input id="evidence-end" type="number" min="1"></label></div><p class="hint">Required for created/used/shared or expressed sentiment. You can select the supporting text on the left.</p><pre id="evidence-view"></pre></fieldset>
+      <fieldset><legend>Supporting evidence</legend><div id="evidence-list"></div><label>Evidence supports<select id="evidence-field"><option value="intents">Intent</option><option value="sentiment">Sentiment</option></select></label><div class="pair"><label>Start<input id="evidence-start" type="number" min="0"></label><label>End<input id="evidence-end" type="number" min="1"></label></div><button type="button" id="add-evidence">Add evidence span</button><p class="hint">Keep separate spans for intent and sentiment. Select supporting text on the left, then add it to the selected field. Saving also adds the pending span; existing spans stay unchanged.</p><pre id="evidence-view"></pre></fieldset>
       <label>Reason for this decision<textarea id="reason" rows="3" required></textarea></label>
       <div class="actions"><button type="submit">Save occurrence</button><button type="button" id="accept">Accept occurrence</button><button type="button" id="remove" class="danger">Remove occurrence</button></div>
     </form>

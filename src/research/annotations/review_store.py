@@ -123,10 +123,14 @@ def apply_decision(c, decision: dict) -> dict:
         elif action=='accept_passage':
             annotation['human_passage_review']={'fields':['software'],'reviewer':decision['reviewer'],
                                                  'decision_id':decision['decision_id'],'recorded_at_utc':now}
-            # Passage acceptance certifies a name search, not unresolved attributes.
-            annotation['covered_regions']=[{**task['annotation_region'],'status':'partial',
-                                            'fields':{k:k=='software' for k in FIELDS},
-                                            'human_reviewed_fields':['software']}]
+            # Human name coverage supplements, rather than replaces, agent field coverage.
+            regions=annotation.get('covered_regions',[])+[
+                {**r,'fields':dict.fromkeys(FIELDS,False)} for r in annotation.get('unresolved_regions',[])]
+            for region in regions:
+                region['fields']['software']=True
+                region['human_reviewed_fields']=sorted(set(region.get('human_reviewed_fields',[]))|{'software'})
+                region['status']='complete' if all(region['fields'].values()) else 'partial'
+            annotation['covered_regions']=sorted(regions,key=lambda r:r['start'])
             annotation['unresolved_regions']=[]
             status='reviewed'
         elif action in ('accept_occurrence','remove_occurrence','mark_field_unresolved','link_version','unlink_version'):
@@ -153,6 +157,12 @@ def apply_decision(c, decision: dict) -> dict:
             status='in_progress'
         else: raise ReviewError('UNKNOWN_ACTION')
         annotation['occurrences']=sorted(occurrences,key=lambda o:o['name_span']['start'])
+        covered=annotation.get('covered_regions',[])
+        annotation['status']='complete' if covered and not annotation.get('unresolved_regions') and all(
+            r['status']=='complete' and all(r['fields'].values()) for r in covered) else 'partial'
+        annotation['complete_negative_regions']=[deepcopy(r) for r in covered
+            if r['status']=='complete' and all(r['fields'].values())
+            and not any(r['start'] < o['name_span']['end'] and o['name_span']['start'] < r['end'] for o in occurrences)]
         annotation['annotation_revision']=item['annotation_revision']+1
         result={'decision_id':decision['decision_id'],'task_id':task['task_id'],
                 'annotation_revision':annotation['annotation_revision'],'recorded_at_utc':now}

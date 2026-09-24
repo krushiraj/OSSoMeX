@@ -172,3 +172,21 @@ def test_acquired_plaintext_keeps_extractor_hash_and_provenance(tmp_path):
     assert row['fulltext_eligible'] is True
     assert row['extractor_version'] == 'plain-utf8-v1'
     assert manifest.verified_path(tmp_path, row).read_text() == 'We used X.'
+
+
+def test_configured_paper_text_acquisition_audit_build_roundtrip(tmp_path, monkeypatch):
+    from research.data.corpus import build_corpus
+    original=acquire.fetch_public
+    def fetch(url,path,policy):
+        return original(url,path,{**policy,'session':Session([Response(b'We used X.')])})
+    monkeypatch.setattr(acquire,'fetch_public',fetch)
+    config={'sources':[{'name':'openalex','kind':'paper_text','url':'https://example.org/paper','format':'text',
+                        'source_record_id':'W1','source_ids':{'doi':'10.1/paper','openalex':'W1'},
+                        'public':True,'language':'en','supplied_text_scope':'fulltext',
+                        'text_license':'CC-BY-4.0','access_basis':'https://example.org/license'}]}
+    p=tmp_path/'config.json';p.write_text(json.dumps(config))
+    assert acquire.acquire_sources(p,tmp_path/'raw')['status']=='success'
+    report=acquire.audit_sources(tmp_path/'raw/acquisitions.jsonl',tmp_path/'audit')
+    assert report['sources']['openalex']['eligible_fulltext']==1
+    assert build_corpus(tmp_path/'raw/acquisitions.jsonl',tmp_path/'corpus')['eligible_fulltext']==1
+    assert manifest.read_jsonl(tmp_path/'corpus/documents.jsonl')[0]['source_ids']=={'doi':'10.1/paper','openalex':'W1'}

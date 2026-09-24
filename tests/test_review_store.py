@@ -96,3 +96,28 @@ def test_demo_cli_is_marked_synthetic_and_never_a_research_split(tmp_path):
     assert all(i['task']['source']=='synthetic-contract-fixture' for i in items)
     c=store.open_store(tmp_path/'demo.sqlite');store.import_items(c,items,role='demo')
     assert store.queue(c)['progress']['total']==len(items)
+
+
+def test_name_audit_preserves_agent_coverage_and_recomputes_negative_regions(tmp_path):
+    c=store.open_store(tmp_path/'r.sqlite');i=item('No tools.')
+    region={**i['task']['annotation_region'],'status':'complete','fields':dict.fromkeys(FIELDS,True),
+            'provenance':{'kind':'agent_provisional'}}
+    i['annotation'].update(status='complete',covered_regions=[region],unresolved_regions=[],complete_negative_regions=[region])
+    store.import_items(c,[i],role='demo');store.apply_decision(c,decision(i['task']))
+    current=store.get_item(c,i['task']['task_id'])['annotation']
+    assert all(current['covered_regions'][0]['fields'].values())
+    assert current['covered_regions'][0]['provenance']=={'kind':'agent_provisional'}
+    assert current['covered_regions'][0]['human_reviewed_fields']==['software']
+    assert current['status']=='complete'
+    assert current['complete_negative_regions'][0]['fields']['sentiment'] is True
+    task=i['task']
+    occurrence={'schema_version':'2.0','document_id':task['document_id'],'text_revision':task['text_revision'],
+                'name':'tools','name_span':{'start':3,'end':8},'context_sentence':task['text'],
+                'context_span':task['context_span'],'context_kind':'paragraph','version_links':[],
+                'version_status':'absent','intents':['mentioned'],'sentiment':'not_expressed',
+                'known':dict.fromkeys(FIELDS,True),'evidence':{'intents':[],'sentiment':[]},
+                'review':{'status':'unreviewed','reasons':[]}}
+    store.apply_decision(c,decision(task,'add',2,action='upsert_occurrence',value=occurrence))
+    assert store.get_item(c,task['task_id'])['annotation']['complete_negative_regions']==[]
+    store.apply_decision(c,decision(task,'remove',3,action='remove_occurrence',target_name_span=occurrence['name_span']))
+    assert len(store.get_item(c,task['task_id'])['annotation']['complete_negative_regions'])==1

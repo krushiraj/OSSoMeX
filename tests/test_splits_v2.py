@@ -128,3 +128,30 @@ def test_access_decision_cannot_promote_an_excerpt_or_different_revision():
     decision['text_revision'] = 'sha256:wrong'
     with pytest.raises(ValueError, match='REVISION_MISMATCH'):
         apply_access_decision(d, decision)
+
+
+def test_native_test_identity_survives_different_acquired_text(tmp_path):
+    import json
+    from research.data.corpus import build_corpus
+    raw=tmp_path/'raw';raw.mkdir()
+    rows=[]
+    for name,ident,text in [('somesci','PMC1','Original full paper.'),('openalex','W1','A different extraction of the same paper.')]:
+        p=raw/name;p.write_text(text)
+        rows.append({'source':name,'source_record_id':ident,'source_ids':{'pmcid':'PMC1','doi':'10.1/same'},
+                     'role':'paper_text','format':'text','path':name,'sha256':digest(p.read_bytes()),
+                     'public':True,'language':'en','supplied_text_scope':'fulltext',
+                     'text_license':'CC-BY-4.0','access_basis':'https://example.org/license'})
+    (raw/'split.json').write_text(json.dumps({'train':[],'test':['PMC1']}))
+    rows.append({'source':'somesci-split','role':'source_metadata','path':'split.json','sha256':digest((raw/'split.json').read_bytes())})
+    write_jsonl(raw/'acquisitions.jsonl',rows)
+    build_corpus(raw/'acquisitions.jsonl',tmp_path/'corpus')
+    docs=read_jsonl(tmp_path/'corpus/documents.jsonl')
+    assert all(d['source_ids']['pmcid']=='PMC1' for d in docs)
+    groups=splits.group_works(docs)['groups']
+    assert len(groups)==1
+    with pytest.raises(splits.SplitError,match='QUOTA_SHORTAGE'):
+        splits.assign_splits(groups,{'somesci':{'train':1,'dev':0,'test':0}},42)
+    rows[0]['source_ids']['pmcid']='PMC2'
+    write_jsonl(raw/'conflicting.jsonl',rows)
+    with pytest.raises(ValueError,match='SOURCE_ID_CONFLICT'):
+        build_corpus(raw/'conflicting.jsonl',tmp_path/'conflicting-corpus')

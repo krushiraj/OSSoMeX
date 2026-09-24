@@ -24,4 +24,5 @@ fieldset { border: 1px solid #ccd8e4; border-radius: 4px; margin: 16px 0; paddin
 #occurrences { margin: 24px 0; display: flex; gap: 8px; flex-wrap: wrap; } .danger { color: #a52b39; }
 #message { white-space: pre-wrap; font-weight: 550; } .error { color: #a52b39; } pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 14px/1.5 Georgia, serif; }
 #export-result { overflow-wrap: anywhere; font-size: 14px; } #version-list button { padding: 3px 8px; margin: 4px; }
+#evidence-list { overflow-wrap: anywhere; font-size: 14px; } #evidence-list button { margin: 4px; font-size: 13px; }
 @media (max-width: 850px) { body { padding: 16px; } #workspace { grid-template-columns: 1fr; }.reading,.editor { padding: 16px; } .filters input { width: 150px; } }

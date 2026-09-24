@@ -12,6 +12,7 @@ from .tei import read_tei
 from .coverage import map_annotations
 from .import_bundle import native_policy
 from .manifest import digest, fulltext_eligible, json_bytes, read_jsonl, verified_path, write_jsonl, write_once
+from .splits import identifiers
 
 
 def native_partition(identifier: str, partitions: dict) -> str:
@@ -72,6 +73,11 @@ def build_corpus(source_manifest: Path, output: Path) -> dict:
                                'code':'EMPTY_SOURCE_TEXT', 'source_member':name})
                 continue
             pmc = re.search(r'PMC\d+', identifier)
+            source_ids = deepcopy(row.get('source_ids', {}))
+            if pmc:
+                if source_ids.get('pmcid') and identifiers({'source_ids':{'pmcid':source_ids['pmcid']}}) != identifiers({'source_ids':{'pmcid':pmc.group()}}):
+                    raise ValueError('SOURCE_ID_CONFLICT')
+                source_ids.setdefault('pmcid', pmc.group())
             partition, partition_issue = None, None
             if row['source'] == 'somesci':
                 try:
@@ -82,7 +88,7 @@ def build_corpus(source_manifest: Path, output: Path) -> dict:
             scope = ('fulltext' if 'Pubmed_fulltext/' in name else 'methods' if 'PLoS_methods/' in name
                      else 'sentence' if '_sentences/' in name else row.get('supplied_text_scope', 'unverified'))
             document = {'document_id': row['source']+':'+name, 'text':parsed['text'], 'source':row['source'],
-                        'source_record_id':identifier, 'source_ids':{'pmcid':pmc.group()} if pmc else {},
+                        'source_record_id':identifier, 'source_ids':source_ids,
                         'native_split':partition, 'supplied_text_scope':scope, 'language':None,
                         'public':row.get('public', False), 'text_license':None, 'access_basis':None,
                         'fulltext_eligible':False, 'acquisition_id':row['sha256'],

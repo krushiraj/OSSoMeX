@@ -1,6 +1,7 @@
 const $ = id => document.getElementById(id);
-let csrf = '', current = null, queueItems = [], target = null, versions = [], revealed = false, selection = null;
+let csrf = '', current = null, queueItems = [], target = null, versions = [], evidenceSpans = {intents: [], sentiment: []}, revealed = false, selection = null;
 const chars = value => Array.from(value);
+const intentBits = ['created', 'used', 'shared'];
 const sourceSlice = (start, end) => chars(current.task.text).slice(start - current.task.offset_base, end - current.task.offset_base).join('');
 const report = (text, error = false) => { $('message').textContent = text; $('message').className = error ? 'error' : ''; };
 const api = async (path, body) => {
@@ -68,17 +69,37 @@ const showVersions = () => {
   });
 };
 const showEvidence = () => { $('evidence-view').textContent = current ? sourceSlice(Number($('evidence-start').value), Number($('evidence-end').value)) : ''; };
+const showEvidenceList = () => {
+  $('evidence-list').replaceChildren();
+  for (const field of ['intents', 'sentiment']) evidenceSpans[field].forEach((span, index) => {
+    const row = element('div', `${field} ${span.start}:${span.end}: ${sourceSlice(span.start, span.end)}`);
+    const remove = element('button', `Remove ${field} evidence ${index + 1}`); remove.type = 'button';
+    remove.onclick = () => { evidenceSpans[field].splice(index, 1); showEvidenceList(); };
+    row.append(remove); $('evidence-list').append(row);
+  });
+};
+const addEvidence = () => {
+  const start = $('evidence-start').value, end = $('evidence-end').value;
+  if (start === '' && end === '') return;
+  if (start === '' || end === '') throw new Error('Evidence needs both start and end.');
+  const span = {start: Number(start), end: Number(end)};
+  if (!Number.isInteger(span.start) || !Number.isInteger(span.end) || span.start < current.task.offset_base || span.end > current.task.context_span.end || span.start >= span.end) throw new Error('Evidence must be inside the source passage.');
+  const list = evidenceSpans[$('evidence-field').value];
+  if (!list.some(s => s.start === span.start && s.end === span.end)) list.push(span);
+  $('evidence-start').value = ''; $('evidence-end').value = ''; showEvidence(); showEvidenceList();
+};
 const edit = o => {
   target = o ? {...o.name_span} : null; versions = o ? structuredClone(o.version_links) : [];
+  evidenceSpans = o ? structuredClone(o.evidence) : {intents: [], sentiment: []};
   const span = o ? o.name_span : selection;
   if (!span) throw new Error('Select a name in the source passage first.');
   $('name-start').value = span.start; $('name-end').value = span.end;
   $('selection-label').textContent = sourceSlice(span.start, span.end); $('editor-form').hidden = false;
   for (const label of ['created', 'used', 'shared', 'mentioned']) $(`intent-${label}`).checked = (o?.intents || []).includes(label);
+  for (const label of intentBits) $(`known-${label}`).value = o?.known?.[label] ? 'known' : 'unknown';
   $('sentiment').value = o?.sentiment || ''; $('version-state').value = o?.version_status || 'unannotated';
-  const evidence = o?.evidence?.intents?.[0] || o?.evidence?.sentiment?.[0];
-  $('evidence-start').value = evidence?.start ?? ''; $('evidence-end').value = evidence?.end ?? '';
-  $('reason').value = ''; showEvidence(); showVersions();
+  $('evidence-field').value = 'intents'; $('evidence-start').value = ''; $('evidence-end').value = '';
+  $('reason').value = ''; showEvidence(); showEvidenceList(); showVersions();
 };
 const save = async (action, extra = {}, reason = $('reason').value) => {
   if (!reason.trim()) throw new Error('Add a reason for this decision.');
@@ -91,14 +112,16 @@ const save = async (action, extra = {}, reason = $('reason').value) => {
 $('editor-form').onsubmit = safe(async event => {
   event.preventDefault();
   const span = {start: Number($('name-start').value), end: Number($('name-end').value)};
-  const intents = ['created', 'used', 'shared', 'mentioned'].filter(k => $(`intent-${k}`).checked);
+  const knownIntents = Object.fromEntries(intentBits.map(k => [k, $(`known-${k}`).value === 'known']));
+  const intents = intentBits.filter(k => $(`intent-${k}`).checked);
+  if (!intents.length && Object.values(knownIntents).every(Boolean)) intents.push('mentioned');
   const sentiment = $('sentiment').value || null, versionStatus = $('version-state').value;
-  const evidence = $('evidence-start').value !== '' && $('evidence-end').value !== '' ? [{start: Number($('evidence-start').value), end: Number($('evidence-end').value)}] : [];
+  addEvidence();
   const value = {schema_version: '2.0', document_id: current.task.document_id, text_revision: current.task.text_revision,
     name: sourceSlice(span.start, span.end), name_span: span, context_sentence: current.task.text, context_span: current.task.context_span,
-    context_kind: 'paragraph', version_links: versions, version_status: versionStatus, intents: intents.length ? intents : null, sentiment,
-    known: {software: true, versions: ['explicit', 'absent'].includes(versionStatus), created: !!intents.length, used: !!intents.length, shared: !!intents.length, sentiment: sentiment !== null},
-    evidence: {intents: intents.some(k => k !== 'mentioned') ? evidence : [], sentiment: sentiment && sentiment !== 'not_expressed' ? evidence : []}, review: {status: 'pending', reasons: []}};
+    context_kind: 'paragraph', version_links: versions, version_status: versionStatus, intents: Object.values(knownIntents).some(Boolean) ? intents : null, sentiment,
+    known: {software: true, versions: ['explicit', 'absent'].includes(versionStatus), ...knownIntents, sentiment: sentiment !== null},
+    evidence: structuredClone(evidenceSpans), review: {status: 'pending', reasons: []}};
   await save('upsert_occurrence', {value});
 });
 $('passage').onmouseup = captureSelection;
@@ -111,10 +134,22 @@ $('add-version').onclick = safe(() => {
   $('version-state').value = 'explicit'; showVersions();
 });
 $('use-evidence').onpointerdown = captureSelection;
-$('use-evidence').onclick = safe(() => { if (!selection) throw new Error('Select evidence first.'); $('evidence-start').value = selection.start; $('evidence-end').value = selection.end; showEvidence(); });
+$('use-evidence').onclick = safe(() => { if (!selection || $('editor-form').hidden) throw new Error('Open an occurrence, then select evidence.'); $('evidence-start').value = selection.start; $('evidence-end').value = selection.end; showEvidence(); });
+$('add-evidence').onclick = safe(addEvidence);
 for (const label of ['created', 'used', 'shared', 'mentioned']) $(`intent-${label}`).onchange = () => {
-  if (label === 'mentioned' && $('intent-mentioned').checked) for (const other of ['created', 'used', 'shared']) $(`intent-${other}`).checked = false;
-  else if ($(`intent-${label}`).checked) $('intent-mentioned').checked = false;
+  if (label === 'mentioned') {
+    for (const other of intentBits) {
+      $(`intent-${other}`).checked = false;
+      $(`known-${other}`).value = $('intent-mentioned').checked ? 'known' : 'unknown';
+    }
+  } else {
+    $(`known-${label}`).value = 'known';
+    $('intent-mentioned').checked = intentBits.every(k => !$(`intent-${k}`).checked && $(`known-${k}`).value === 'known');
+  }
+};
+for (const label of intentBits) $(`known-${label}`).onchange = () => {
+  if ($(`known-${label}`).value === 'unknown') $(`intent-${label}`).checked = false;
+  $('intent-mentioned').checked = intentBits.every(k => !$(`intent-${k}`).checked && $(`known-${k}`).value === 'known');
 };
 for (const id of ['evidence-start', 'evidence-end']) $(id).oninput = showEvidence;
 $('reveal').onclick = () => { revealed = true; renderPassage(); };

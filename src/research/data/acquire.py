@@ -243,7 +243,7 @@ def acquire_sources(config_path: Path, output: Path) -> dict:
                 record = fetch_public(source['url'], path, {'format':'json'})
                 rows = [{**record, **source, 'source':source['name'], 'path':'metadata.json', 'role':'source_metadata'}]
             elif source['kind'] == 'paper_text':
-                rows = [acquire_text(source, root)]
+                rows = [acquire_text({**source, 'source':source['name']}, root)]
             else:
                 path = root / 'archive.zip'
                 if source['kind'] == 'local_archive':
