@@ -26,6 +26,9 @@ node_modules/
 /deliverables/
 annotations/*
 !annotations/annotation_policy.md
+!annotations/scibert-v2/
+annotations/scibert-v2/*
+!annotations/scibert-v2/policy.md
 logs*.txt
 task_ledger.jsonl
 deviations.jsonl

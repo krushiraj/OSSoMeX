@@ -398,6 +398,8 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     from .data.cli import register as register_data
     register_data(sub)
+    from .annotations.cli import register as register_annotations
+    register_annotations(sub)
 
     p = sub.add_parser("inventory")
     p.add_argument("--input", required=True)
