@@ -9,6 +9,7 @@ import sqlite3
 from ..contracts import FIELDS, INTENT_BITS
 from ..data.manifest import digest, json_bytes, write_jsonl, write_once
 from .validation import validate_task_occurrence
+from .alias_decisions import ALIAS_ACTIONS, apply_alias_decision, assert_alias_members_unchanged, validate_annotation_aliases
 
 
 class ReviewError(ValueError):
@@ -35,7 +36,10 @@ def open_store(path: Path) -> sqlite3.Connection:
     return c
 
 
-def import_items(c, items: list[dict], role: str) -> None:
+def import_items(c, items: list[dict], role: str, policy_provenance: dict | None = None) -> None:
+    from .snapshots import LEGACY_PROVENANCE, validate_item_policy
+    provenance=policy_provenance if policy_provenance is not None else dict(LEGACY_PROVENANCE)
+    validate_item_policy(items,provenance)
     if role not in ('train','dev','demo'):
         raise ReviewError('SPLIT_NOT_PERMITTED')
     c.execute('BEGIN IMMEDIATE')
@@ -43,19 +47,26 @@ def import_items(c, items: list[dict], role: str) -> None:
         previous=c.execute("SELECT value FROM metadata WHERE key='role'").fetchone()
         if previous and previous['value']!=role: raise ReviewError('SPLIT_CONFLICT')
         c.execute("INSERT OR IGNORE INTO metadata VALUES ('role',?)",(role,))
+        previous_sources=c.execute("SELECT value FROM metadata WHERE key='policy_sources'").fetchone()
+        if previous_sources and json.loads(previous_sources['value'])!=provenance:
+            raise ReviewError('POLICY_SOURCE_CONFLICT')
+        c.execute("INSERT OR IGNORE INTO metadata VALUES ('policy_sources',?)",(json.dumps(provenance),))
         for item in items:
             task=item['task']; original=digest(json_bytes(item)); tid=task['task_id']
             if task.get('split')!=role: raise ReviewError('SPLIT_CONFLICT')
+            annotation=deepcopy(item['annotation'])
+            annotation['occurrences']=[validate_task_occurrence(task,o) for o in annotation['occurrences']]
+            validate_annotation_aliases(task,annotation)
             before=c.execute('SELECT original_hash FROM items WHERE task_id=?',(tid,)).fetchone()
             if before:
                 if before['original_hash']!=original: raise ReviewError('SOURCE_CONFLICT')
                 continue
-            annotation=deepcopy(item['annotation'])
-            annotation['occurrences']=[validate_task_occurrence(task,o) for o in annotation['occurrences']]
             task={**task,'occurrence_audit_ids':item.get('occurrence_audit_ids',[])}
             c.execute('INSERT INTO items VALUES (?,?,?,?,?,?)',
                       (tid,original,json.dumps(task),json.dumps(annotation),1,'unreviewed'))
         c.commit()
+    except ValueError as exc:
+        c.rollback();raise ReviewError(str(exc)) from exc
     except Exception:
         c.rollback();raise
 
@@ -68,12 +79,13 @@ def get_item(c, task_id: str) -> dict:
 
 
 def queue(c, filters=None) -> dict:
-    from .routing import review_reasons
+    from .routing import alias_review_reasons, review_reasons
     filters=filters or {}; rows=[]; reviewed=0
     for row in c.execute('SELECT task_id,status FROM items ORDER BY task_id'):
         item=get_item(c,row['task_id']); task=item['task']; annotation=item['annotation']
         reviewed+=item['status']=='reviewed'
         reasons=sorted(set(r for o in annotation['occurrences'] for r in review_reasons(o,None)))
+        reasons.extend(alias_review_reasons(annotation))
         if task.get('whole_passage_audit'): reasons.append('whole_passage_audit')
         if task.get('occurrence_audit_ids'): reasons.append('random_occurrence_audit')
         if annotation.get('status')=='partial': reasons.append('partial_annotation')
@@ -100,6 +112,7 @@ def apply_decision(c, decision: dict) -> dict:
             if prior['payload']!=payload: raise ReviewError('DECISION_ID_CONFLICT')
             c.commit();return json.loads(prior['result'])
         item=get_item(c,decision['task_id']);task=item['task'];annotation=item['annotation']
+        validate_annotation_aliases(task,annotation)
         if any(decision.get(k)!=task[k] for k in ('document_id','text_revision')):
             raise ReviewError('SOURCE_REVISION_MISMATCH')
         if type(decision.get('base_annotation_revision')) is not int or decision['base_annotation_revision']!=item['annotation_revision']:
@@ -111,13 +124,19 @@ def apply_decision(c, decision: dict) -> dict:
         provenance={'status':'human_reviewed','reviewer':decision['reviewer'],'decision_id':decision['decision_id'],
                     'recorded_at_utc':now,'reasons':[]}
         status=item['status']
-        if action=='upsert_occurrence':
+        if action in ALIAS_ACTIONS:
+            annotation=apply_alias_decision(task,annotation,decision,provenance)
+            occurrences=annotation['occurrences']
+            if status!='reviewed': status='in_progress'
+        elif action=='upsert_occurrence':
             try: new=validate_task_occurrence(task,value)
             except (ValueError,KeyError,TypeError) as exc: raise ReviewError('INVALID_OCCURRENCE:'+str(exc)) from exc
             if target is not None and existing is None: raise ReviewError('UNKNOWN_OCCURRENCE')
             if any(o is not existing and o['name_span']==new['name_span'] for o in occurrences):
                 raise ReviewError('DUPLICATE_OCCURRENCE')
-            if existing: occurrences.remove(existing)
+            if existing:
+                assert_alias_members_unchanged(annotation,existing['mention_id'],new['mention_id'])
+                occurrences.remove(existing)
             new['review']=provenance;occurrences.append(new)
             status='in_progress'
         elif action=='accept_passage':
@@ -135,7 +154,9 @@ def apply_decision(c, decision: dict) -> dict:
             status='reviewed'
         elif action in ('accept_occurrence','remove_occurrence','mark_field_unresolved','link_version','unlink_version'):
             if existing is None: raise ReviewError('UNKNOWN_OCCURRENCE')
-            if action=='remove_occurrence': occurrences.remove(existing)
+            if action=='remove_occurrence':
+                assert_alias_members_unchanged(annotation,existing['mention_id'],None)
+                occurrences.remove(existing)
             else:
                 existing['review']=provenance
                 if action=='mark_field_unresolved':
@@ -156,13 +177,15 @@ def apply_decision(c, decision: dict) -> dict:
                 validate_task_occurrence(task,existing)
             status='in_progress'
         else: raise ReviewError('UNKNOWN_ACTION')
-        annotation['occurrences']=sorted(occurrences,key=lambda o:o['name_span']['start'])
-        covered=annotation.get('covered_regions',[])
-        annotation['status']='complete' if covered and not annotation.get('unresolved_regions') and all(
-            r['status']=='complete' and all(r['fields'].values()) for r in covered) else 'partial'
-        annotation['complete_negative_regions']=[deepcopy(r) for r in covered
-            if r['status']=='complete' and all(r['fields'].values())
-            and not any(r['start'] < o['name_span']['end'] and o['name_span']['start'] < r['end'] for o in occurrences)]
+        if action not in ALIAS_ACTIONS:
+            annotation['occurrences']=sorted(occurrences,key=lambda o:o['name_span']['start'])
+            covered=annotation.get('covered_regions',[])
+            annotation['status']='complete' if covered and not annotation.get('unresolved_regions') and all(
+                r['status']=='complete' and all(r['fields'].values()) for r in covered) else 'partial'
+            annotation['complete_negative_regions']=[deepcopy(r) for r in covered
+                if r['status']=='complete' and all(r['fields'].values())
+                and not any(r['start'] < o['name_span']['end'] and o['name_span']['start'] < r['end'] for o in occurrences)]
+        validate_annotation_aliases(task,annotation)
         annotation['annotation_revision']=item['annotation_revision']+1
         result={'decision_id':decision['decision_id'],'task_id':task['task_id'],
                 'annotation_revision':annotation['annotation_revision'],'recorded_at_utc':now}
@@ -170,27 +193,34 @@ def apply_decision(c, decision: dict) -> dict:
                   (json.dumps(annotation),annotation['annotation_revision'],status,task['task_id']))
         c.execute('INSERT INTO decisions VALUES (?,?,?,?,?)',(decision['decision_id'],task['task_id'],payload,json.dumps(result),now))
         c.commit();return result
+    except ValueError as exc:
+        c.rollback();raise ReviewError(str(exc)) from exc
     except Exception:
         c.rollback();raise
 
 
 def export_reference(c, destination: Path) -> dict:
+    from .snapshots import LEGACY_PROVENANCE, SNAPSHOT_VERSION, reference_rows, write_policy_provenance
     if destination.exists(): raise FileExistsError(destination)
     c.execute('BEGIN')
     try:
         items=[get_item(c,r[0]) for r in c.execute('SELECT task_id FROM items ORDER BY task_id')]
         role=c.execute("SELECT value FROM metadata WHERE key='role'").fetchone()[0]
-        decisions=[{**json.loads(r['payload']),'recorded_at_utc':r['recorded_at']} for r in c.execute('SELECT * FROM decisions ORDER BY rowid')]
+        decision_records=[dict(r) for r in c.execute('SELECT * FROM decisions ORDER BY rowid')]
+        store_items=[dict(r) for r in c.execute('SELECT * FROM items ORDER BY task_id')]
+        metadata=[dict(r) for r in c.execute('SELECT * FROM metadata ORDER BY rowid')]
         c.commit()
     except Exception:
         c.rollback();raise
+    files=reference_rows(items,decision_records)
+    files.update({'store-items.jsonl':store_items,'decision-records.jsonl':decision_records,'metadata.jsonl':metadata})
     destination.mkdir(parents=True)
-    coverage=[{'document_id':i['task']['document_id'],'text_revision':i['task']['text_revision'],**r}
-              for i in items for r in i['annotation'].get('covered_regions',[])]
-    files={'items.jsonl':items,'occurrences.jsonl':[o for i in items for o in i['annotation']['occurrences']],
-           'coverage.jsonl':coverage,'decisions.jsonl':decisions}
     for name,rows in files.items():write_jsonl(destination/name,rows)
-    manifest={'role':role,'quality':'provisional','task_count':len(items), 'decision_count':len(decisions),
-              'files':[{'path':n,'sha256':digest((destination/n).read_bytes())} for n in files]}
+    provenance=json.loads(next((row['value'] for row in metadata if row['key']=='policy_sources'),json.dumps(LEGACY_PROVENANCE)))
+    sources=write_policy_provenance(destination,provenance)
+    manifest={**sources,'role':role,'quality':'provisional','task_count':len(items), 'decision_count':len(decision_records),
+              'snapshot_schema_version':SNAPSHOT_VERSION,'alias_schema_version':'1.0',
+              'capabilities':{'aliases':True,'exact_store_restore':True},
+              'files':[{'path':n,'sha256':digest((destination/n).read_bytes())} for n in files]+sources['files']}
     write_once(destination/'manifest.json',json_bytes(manifest))
     return manifest

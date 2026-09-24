@@ -8,6 +8,8 @@ from urllib.parse import parse_qs, unquote, urlsplit
 
 from ..data.manifest import read_jsonl, verified_path
 from .review_store import ReviewError, apply_decision, export_reference, get_item, import_items, open_store, queue
+from .aliases import build_alias_groups
+from .snapshots import read_policy_provenance
 
 
 def check_bind(host):
@@ -28,8 +30,9 @@ def create_server(bundle: Path, store: Path, host='127.0.0.1', port=8765):
     check_bind(host)
     manifest=json.loads((bundle/'manifest.json').read_bytes())
     for row in manifest['files']: verified_path(bundle,row)
+    provenance=read_policy_provenance(bundle,manifest)
     c=open_store(store)
-    try: import_items(c,read_jsonl(bundle/'items.jsonl'),manifest['role'])
+    try: import_items(c,read_jsonl(bundle/'items.jsonl'),manifest['role'],provenance)
     finally:c.close()
     token=secrets.token_urlsafe(32)
     assets=Path(__file__).parent/'web'
@@ -54,7 +57,8 @@ def create_server(bundle: Path, store: Path, host='127.0.0.1', port=8765):
                     '/review.css':('review.css','text/css; charset=utf-8')}
             if path in static:
                 name,mime=static[path];return self.respond(200,(assets/name).read_bytes(),mime)
-            if path=='/api/session': return self.respond(200,{'csrf_token':token,'role':manifest['role']})
+            if path=='/api/session': return self.respond(200,{'csrf_token':token,'role':manifest['role'],
+                                                            'capabilities':{'aliases':True},'alias_schema_version':'1.0'})
             c=open_store(store)
             try:
                 if path=='/api/queue':
@@ -62,6 +66,8 @@ def create_server(bundle: Path, store: Path, host='127.0.0.1', port=8765):
                     return self.respond(200,queue(c,filters))
                 if path.startswith('/api/tasks/'):
                     item=get_item(c,unquote(path.removeprefix('/api/tasks/')))
+                    item['alias_groups']=build_alias_groups(item['annotation']['occurrences'],
+                                                          item['annotation'].get('alias_annotations'))
                     # Do not expose scores in the reviewer response.
                     for occurrence in item['annotation']['occurrences']: occurrence.pop('scores',None)
                     return self.respond(200,item)

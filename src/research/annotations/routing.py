@@ -3,6 +3,20 @@ import random
 from pathlib import Path
 
 from ..data.manifest import digest, json_bytes, write_once
+from .aliases import build_alias_groups
+
+
+def alias_review_reasons(annotation: dict) -> list[str]:
+    layer=annotation.get('alias_annotations')
+    if layer is None: return []
+    reasons=set()
+    for relation in layer['relations']:
+        reasons.update(relation['review']['reasons'])
+        if relation['decision']=='unresolved': reasons.add('unresolved_alias')
+        elif relation['review']['status']!='human_reviewed': reasons.add('alias_needs_review')
+    for group in build_alias_groups(annotation['occurrences'],layer):
+        reasons.update(group.get('review_reasons',[]))
+    return sorted(reasons)
 
 
 def review_reasons(occurrence: dict, disagreement: dict | None) -> list[str]:

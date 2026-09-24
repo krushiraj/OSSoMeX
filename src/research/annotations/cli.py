@@ -24,10 +24,16 @@ def register(subparsers):
     p=sub.add_parser('review'); p.add_argument('--bundle',type=Path,required=True)
     p.add_argument('--store',type=Path,required=True); p.add_argument('--host',default='127.0.0.1')
     p.add_argument('--port',type=int,default=8765); p.set_defaults(func=run)
+    p=sub.add_parser('restore'); p.add_argument('--bundle',type=Path,required=True)
+    p.add_argument('--store',type=Path,required=True); p.set_defaults(func=run)
     p=sub.add_parser('demo'); p.add_argument('--output',type=Path,required=True); p.set_defaults(func=run)
 
 
 def run(args):
+    if args.annotation_command=='restore':
+        from .snapshots import restore_review_snapshot
+        print(json.dumps(restore_review_snapshot(args.bundle,args.store)))
+        return 0
     if args.annotation_command=='review':
         from .review_server import serve_review
         serve_review(args.bundle,args.store,args.host,args.port)
@@ -145,9 +151,11 @@ def run(args):
         for item in items:
             item['occurrence_audit_ids']=[o['mention_id'] for o in item['annotation']['occurrences'] if o['mention_id'] in audit['selected_ids']]
         write_jsonl(args.output/'items.jsonl',items)
-        write_once(args.output/'manifest.json',json_bytes({'role':meta['role'],'status':'provisional',
+        from .snapshots import read_policy_provenance, write_policy_provenance
+        sources=write_policy_provenance(args.output,read_policy_provenance(args.tasks,meta))
+        write_once(args.output/'manifest.json',json_bytes({**sources,'role':meta['role'],'status':'provisional',
                    'task_count':len(items),'task_manifest_sha256':digest((args.tasks/'manifest.json').read_bytes()),
-                   'files':[{'path':'items.jsonl','sha256':digest((args.output/'items.jsonl').read_bytes())}]}))
+                   'files':[{'path':'items.jsonl','sha256':digest((args.output/'items.jsonl').read_bytes())}]+sources['files']}))
         print(json.dumps({'status':'provisional','tasks':len(items)}))
     return 0
 

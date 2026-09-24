@@ -7,6 +7,7 @@ from research.contracts import FIELDS
 from research.annotations.tasks import make_tasks
 from research.annotations import review_store as store
 from research.data.manifest import read_jsonl
+from alias_fixtures import alias_item
 
 
 def item(text='😀 We used X.'):
@@ -121,3 +122,143 @@ def test_name_audit_preserves_agent_coverage_and_recomputes_negative_regions(tmp
     assert store.get_item(c,task['task_id'])['annotation']['complete_negative_regions']==[]
     store.apply_decision(c,decision(task,'remove',3,action='remove_occurrence',target_name_span=occurrence['name_span']))
     assert len(store.get_item(c,task['task_id'])['annotation']['complete_negative_regions'])==1
+
+
+def test_alias_acceptance_independent_and_preserves_completed_name_audit(tmp_path):
+    i=alias_item(); task=i['task']; c=store.open_store(tmp_path/'r.sqlite')
+    store.import_items(c,[i],'demo')
+    before=store.get_item(c,task['task_id'])['annotation']['occurrences']
+    rid=i['annotation']['alias_annotations']['relations'][0]['relation_id']
+    payload=decision(task,action='accept_alias',target_relation_id=rid)
+    saved=store.apply_decision(c,payload)
+    assert store.apply_decision(c,payload)==saved
+    current=store.get_item(c,task['task_id'])
+    assert current['annotation']['occurrences']==before
+    assert 'human_passage_review' not in current['annotation']
+    assert current['status']!='reviewed'
+    assert current['annotation']['alias_annotations']['relations'][0]['review']['status']=='human_reviewed'
+    store.apply_decision(c,decision(task,'passage',2))
+    passage=store.get_item(c,task['task_id'])['annotation']['human_passage_review']
+    store.apply_decision(c,decision(task,'reject',3,action='reject_alias',target_relation_id=rid))
+    current=store.get_item(c,task['task_id'])
+    assert current['status']=='reviewed'
+    assert current['annotation']['human_passage_review']==passage
+    assert store.queue(c)['progress']['reviewed']==1
+
+
+@pytest.mark.parametrize('relation_decision',['alias','not_alias','unresolved'])
+def test_alias_members_protected_and_attribute_edits_survive(tmp_path,relation_decision):
+    i=alias_item(); relation=i['annotation']['alias_annotations']['relations'][0]
+    relation['decision']=relation_decision
+    if relation_decision!='alias': relation['preferred_mention_id']=None
+    task=i['task']; c=store.open_store(tmp_path/'r.sqlite'); store.import_items(c,[i],'demo')
+    before=store.get_item(c,task['task_id']); occurrence=before['annotation']['occurrences'][0]
+    changed=deepcopy(occurrence)
+    changed['name_span']['end']-=1; changed['name']=changed['name'][:-1]
+    changed.pop('mention_id')
+    for patch in [{'action':'remove_occurrence'}, {'action':'upsert_occurrence','value':changed}]:
+        with pytest.raises(store.ReviewError,match='ALIAS_MEMBER_IN_USE'):
+            store.apply_decision(c,decision(task,target_name_span=occurrence['name_span'],**patch))
+        assert store.get_item(c,task['task_id'])==before
+        assert c.execute('SELECT count(*) FROM decisions').fetchone()[0]==0
+    store.apply_decision(c,decision(task,action='upsert_occurrence',target_name_span=occurrence['name_span'],value=occurrence))
+    assert store.get_item(c,task['task_id'])['annotation']['alias_annotations']==i['annotation']['alias_annotations']
+
+
+def test_alias_actions_atomic_and_server_owned_provenance(tmp_path):
+    i=alias_item(); task=i['task']; c=store.open_store(tmp_path/'r.sqlite'); store.import_items(c,[i],'demo')
+    relation=i['annotation']['alias_annotations']['relations'][0]; rid=relation['relation_id']
+    before=store.get_item(c,task['task_id'])
+    for patch,code in [({'action':'remove_alias','target_relation_id':'unknown'},'UNKNOWN_ALIAS_RELATION'),
+                       ({'action':'upsert_alias','value':relation},'DUPLICATE_ALIAS_PAIR'),
+                       ({'action':'accept_alias','target_relation_id':rid,'text_revision':'wrong'},'SOURCE_REVISION_MISMATCH'),
+                       ({'action':'accept_alias','target_relation_id':rid,'base_annotation_revision':9},'STALE_REVISION')]:
+        with pytest.raises(store.ReviewError,match=code): store.apply_decision(c,decision(task,**patch))
+        assert store.get_item(c,task['task_id'])==before
+        assert c.execute('SELECT count(*) FROM decisions').fetchone()[0]==0
+    value={**relation,'review':{'status':'human_reviewed','reviewer':'forged'}}
+    store.apply_decision(c,decision(task,action='upsert_alias',target_relation_id=rid,value=value))
+    review=store.get_item(c,task['task_id'])['annotation']['alias_annotations']['relations'][0]['review']
+    assert review['reviewer']=='Krushi'
+    store.apply_decision(c,decision(task,'unresolve',2,action='unresolve_alias',target_relation_id=rid))
+    with pytest.raises(store.ReviewError,match='ALIAS_NOT_POSITIVE'):
+        store.apply_decision(c,decision(task,'accept',3,action='accept_alias',target_relation_id=rid))
+    assert 'unresolved_alias' in store.queue(c)['items'][0]['reasons']
+    store.apply_decision(c,decision(task,'remove',3,action='remove_alias',target_relation_id=rid))
+    assert store.get_item(c,task['task_id'])['annotation']['alias_annotations']['relations']==[]
+
+
+def test_store_rejects_null_alias_layer_and_preserves_legacy_absence(tmp_path):
+    c=store.open_store(tmp_path/'r.sqlite'); i=item(); i['annotation']['alias_annotations']=None
+    with pytest.raises(store.ReviewError,match='ALIAS_SCHEMA_UNSUPPORTED'): store.import_items(c,[i],'demo')
+    assert c.execute('SELECT count(*) FROM items').fetchone()[0]==0
+    del i['annotation']['alias_annotations']; store.import_items(c,[i],'demo')
+    store.apply_decision(c,decision(i['task']))
+    assert 'alias_annotations' not in store.get_item(c,i['task']['task_id'])['annotation']
+
+
+def test_alias_edit_preserves_every_other_annotation_field(tmp_path):
+    i=alias_item(); i['annotation']['occurrences'].reverse()
+    c=store.open_store(tmp_path/'r.sqlite'); store.import_items(c,[i],'demo')
+    before=store.get_item(c,i['task']['task_id'])['annotation']
+    rid=before['alias_annotations']['relations'][0]['relation_id']
+    store.apply_decision(c,decision(i['task'],action='accept_alias',target_relation_id=rid))
+    after=store.get_item(c,i['task']['task_id'])['annotation']
+    for annotation in (before,after):
+        annotation.pop('alias_annotations'); annotation.pop('annotation_revision')
+    assert after==before
+
+
+@pytest.mark.parametrize('capability',['old_policy','not_requested'])
+def test_alias_mutations_require_task_policy_capability(tmp_path,capability):
+    i=alias_item()
+    if capability=='old_policy': i['task']['policy_version']='scibert-poc-2.0'
+    else: i['task']['requested_fields'].remove('aliases')
+    c=store.open_store(tmp_path/'r.sqlite'); store.import_items(c,[i],'demo')
+    before=store.get_item(c,i['task']['task_id'])
+    with pytest.raises(store.ReviewError,match='ALIAS_TASK_UNSUPPORTED'):
+        store.apply_decision(c,decision(i['task'],action='upsert_alias',value=i['annotation']['alias_annotations']['relations'][0]))
+    assert store.get_item(c,i['task']['task_id'])==before
+    assert c.execute('SELECT count(*) FROM decisions').fetchone()[0]==0
+
+
+def test_alias_graph_contradiction_and_targeted_replacement_are_atomic(tmp_path):
+    from test_aliases import _three_names
+    task,occurrences,pair=_three_names(); task.update(split='demo',requested_fields=['aliases'])
+    i={'task':task,'annotation':{'occurrences':occurrences,'annotation_revision':1,
+        'alias_annotations':{'schema_version':'1.0','relations':[pair(0,1,preferred=0),pair(0,2,'not_alias')]}}}
+    c=store.open_store(tmp_path/'r.sqlite'); store.import_items(c,[i],'demo'); before=store.get_item(c,task['task_id'])
+    with pytest.raises(store.ReviewError,match='ALIAS_CONTRADICTION'):
+        store.apply_decision(c,decision(task,action='upsert_alias',value=pair(1,2,preferred=1)))
+    assert store.get_item(c,task['task_id'])==before
+    assert c.execute('SELECT count(*) FROM decisions').fetchone()[0]==0
+    rid=pair(0,2,'not_alias')['relation_id']
+    store.apply_decision(c,decision(task,action='upsert_alias',target_relation_id=rid,value=pair(1,2,preferred=1)))
+    relations=store.get_item(c,task['task_id'])['annotation']['alias_annotations']['relations']
+    assert len(relations)==2 and all(r['relation_id']!=rid for r in relations)
+    assert 'alias_preference_conflict' in store.queue(c)['items'][0]['reasons']
+
+
+def test_failed_alias_log_insert_rolls_back_item_and_revision(tmp_path):
+    import sqlite3
+    i=alias_item(); c=store.open_store(tmp_path/'r.sqlite'); store.import_items(c,[i],'demo')
+    before=store.get_item(c,i['task']['task_id'])
+    c.execute("CREATE TRIGGER fail_insert BEFORE INSERT ON decisions BEGIN SELECT RAISE(ABORT,'disk failure'); END")
+    with pytest.raises(sqlite3.DatabaseError,match='disk failure'):
+        store.apply_decision(c,decision(i['task'],action='reject_alias',
+                                      target_relation_id=i['annotation']['alias_annotations']['relations'][0]['relation_id']))
+    assert store.get_item(c,i['task']['task_id'])==before
+    assert c.execute('SELECT count(*) FROM decisions').fetchone()[0]==0
+
+
+def test_alias_helper_is_copy_on_write_for_success_and_failure():
+    from research.annotations.alias_decisions import apply_alias_decision
+    i=alias_item(); before=deepcopy(i); rid=i['annotation']['alias_annotations']['relations'][0]['relation_id']
+    provenance={'status':'human_reviewed','reviewer':'tester','decision_id':'pure','recorded_at_utc':'now','reasons':[]}
+    result=apply_alias_decision(i['task'],i['annotation'],{'action':'accept_alias','target_relation_id':rid},provenance)
+    result['alias_annotations']['relations'][0]['review']['reasons'].append('changed')
+    assert i==before and provenance['reasons']==[]
+    with pytest.raises(ValueError,match='DUPLICATE_ALIAS_PAIR'):
+        apply_alias_decision(i['task'],i['annotation'],{'action':'upsert_alias',
+                             'value':i['annotation']['alias_annotations']['relations'][0]},provenance)
+    assert i==before
