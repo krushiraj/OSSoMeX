@@ -294,6 +294,57 @@ def test_session_conflict_requires_review_and_reapplies_only_human_changes(page,
     assert logs[0][0]['decision_id'] != logs[1][0]['decision_id']
 
 
+@pytest.mark.parametrize('selection_app', ['complete_proposal_ui'], indirect=True)
+@pytest.mark.parametrize('keep_redo', [False, True])
+def test_session_conflict_replay_noop_keeps_undo_journal_aligned(page, context, selection_app, keep_redo):
+    base, task_id = open_integrated(page, selection_app)
+    peer = context.new_page()
+    open_integrated(peer, selection_app)
+    edit_sentiment(page, 'Unknown sentiment')
+    for current in [page, peer]:
+        current.get_by_role('button', name='Edit intent', exact=True).click()
+        current.get_by_role('button', name='Mentioned only', exact=True).click()
+    peer.get_by_role('button', name='Save', exact=True).click()
+    expect(peer.locator('#review-message')).to_contain_text('Saved')
+    page.get_by_role('button', name='Save', exact=True).click()
+    expect(page.locator('#review-message')).to_contain_text('draft is intact')
+    page.get_by_role('button', name='Review differences', exact=True).click()
+    page.get_by_role('button', name='Reapply reviewed changes', exact=True).click()
+    expect(page.get_by_role('button', name='Unknown sentiment', exact=True)).to_be_visible()
+    page.get_by_role('button', name='Undo', exact=True).click()
+    expect(page.get_by_role('button', name='Positive', exact=True)).to_be_visible()
+    page.get_by_role('button', name='Redo', exact=True).click()
+    expect(page.get_by_role('button', name='Unknown sentiment', exact=True)).to_be_visible()
+    if not keep_redo:
+        page.get_by_role('button', name='Undo', exact=True).click()
+        expect(page.get_by_role('button', name='Positive', exact=True)).to_be_visible()
+
+    page.get_by_role('button', name='v0.17', exact=True).click()
+    page.get_by_role('button', name='Version unresolved', exact=True).click()
+    peer.get_by_role('button', name='Correct name', exact=True).click()
+    peer.get_by_role('button', name='Confirm software name', exact=True).click()
+    peer.get_by_role('button', name='Save', exact=True).click()
+    expect(peer.locator('#review-message')).to_contain_text('Saved')
+    page.get_by_role('button', name='Save', exact=True).click()
+    expect(page.locator('#review-message')).to_contain_text('draft is intact')
+    page.get_by_role('button', name='Review differences', exact=True).click()
+    page.get_by_role('button', name='Reapply reviewed changes', exact=True).click()
+    expect(page.locator('#review-message')).to_contain_text('Reviewed changes reapplied')
+    expect(page.get_by_role('button', name='Unknown sentiment' if keep_redo else 'Positive', exact=True)).to_be_visible()
+    page.get_by_role('button', name='Save', exact=True).click()
+    expect(page.locator('#review-message')).to_contain_text('Saved')
+    saved = saved_item(page, base, task_id)
+    row = saved['annotation']['occurrences'][0]
+    assert row['sentiment'] == (None if keep_redo else 'positive')
+    assert row['known']['sentiment'] is not keep_redo
+    assert row['known']['versions'] is False
+    assert row['intents'] == ['mentioned']
+    assert saved['annotation_revision'] == 4
+    logs = decision_rows(selection_app)
+    assert len(logs) == 3
+    assert any('sentiment' in op.get('fields', []) for op in logs[-1][0]['value']['operations']) is keep_redo
+
+
 @pytest.mark.parametrize('selection_app', [{'variants': ['complete_proposal', 'negative']}], indirect=True)
 @pytest.mark.parametrize('trigger,choice', [('previous','stay'), ('queue','discard'), ('filter','save_leave'), ('alt','discard')])
 def test_session_dirty_navigation_choices_and_beforeunload(page, selection_app, trigger, choice):

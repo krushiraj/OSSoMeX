@@ -140,9 +140,14 @@ export const createReviewSession = ({request, view, reviewer}) => {
     const latest = await getTask(draft.base.task.task_id);
     if (JSON.stringify(latest.task) !== JSON.stringify(draft.base.task)) throw new Error('Passage source changed. Reload server state and review the source again.');
     let reapplied = await freshDraft(latest, initialRevealed);
-    for (const action of journal) reapplied = await applyDraftAction(reapplied, action);
+    const replayJournal = [];
+    for (const action of journal) {
+      const previous = reapplied;
+      reapplied = await applyDraftAction(reapplied, action);
+      if (reapplied.undoStack.length > previous.undoStack.length) replayJournal.push(action);
+    }
     const visibleAnnotation = item => draft.revealed ? item.annotation : {notice:'Proposed labels remain hidden.'};
-    state.conflict = {...state.conflict, reviewed:true, latest, reapplied,
+    state.conflict = {...state.conflict, reviewed:true, latest, reapplied, replayJournal,
       differences:JSON.stringify({previous:visibleAnnotation(draft.base), server:visibleAnnotation(latest), reapplied:reapplied.view.annotation}, null, 2)};
     state.error = 'Review the previous, server and reapplied labels below. Reapplication stages changes for a new save.';
   };
@@ -166,7 +171,7 @@ export const createReviewSession = ({request, view, reviewer}) => {
             if (latest.annotation_revision !== state.conflict.latest.annotation_revision || JSON.stringify(latest.task) !== JSON.stringify(state.conflict.latest.task)) {
               state.conflict = {code:'STALE_REVISION',reviewed:false};state.error = 'Server state changed again. Review the new differences before reapplying.';
             } else {
-              draft = state.conflict.reapplied;redoJournal = [];state.conflict = null;
+              draft = state.conflict.reapplied;journal = state.conflict.replayJournal;redoJournal = [];state.conflict = null;
               state.error = 'Reviewed changes reapplied. Inspect the draft, then Save.';
             }
           }
@@ -185,7 +190,7 @@ export const createReviewSession = ({request, view, reviewer}) => {
       else if (captured.type === 'redo') {draft = redoDraft(draft);if (draft !== previous && redoJournal.length) journal.push(redoJournal.pop());}
       else {
         draft = await applyDraftAction(draft, captured);
-        if (draft !== previous && captured.type !== 'activate_name') {journal.push(captured);redoJournal = [];}
+        if (draft.undoStack.length > previous.undoStack.length) {journal.push(captured);redoJournal = [];}
       }
       state.error = '';render();
     });
