@@ -1,4 +1,5 @@
 import threading
+from pathlib import Path
 
 import pytest
 
@@ -9,6 +10,7 @@ from review_workflow_fixtures import selection_item
 from research.annotations.review_server import create_server
 from research.annotations.aliases import alias_relation_id
 from research.data.manifest import digest, json_bytes, write_jsonl, write_once
+from playwright.sync_api import expect
 
 
 @pytest.fixture
@@ -51,6 +53,356 @@ def save(page, base, ident='browser-batch'):
                                  headers={'Origin': base, 'X-CSRF-Token': token})
     assert response.ok, response.text()
     return response.json()
+
+
+def mount_view(page, selection_app):
+    base, item = load(page, selection_app)
+    page.evaluate('''async () => {
+      const {mountReviewView} = await import('/review-view.js');
+      document.querySelectorAll('link[rel="stylesheet"]').forEach(node=>node.remove());
+      const css = document.createElement('link'); css.rel='stylesheet';css.href='/review-v2.css';document.head.append(css);
+      const root = document.createElement('main'); root.id='review-root';document.body.replaceChildren(root);
+      window.calls=[]; window.sessionState={saving:false}; window.queue=[];
+      window.renderView=()=>view.render(draft,modules.summarizeDraft(draft),queue,sessionState);
+      window.view=mountReviewView(root,{
+        onAction:async action=>{calls.push(action);try {
+          draft=action.type==='undo'?modules.undoDraft(draft):action.type==='redo'?modules.redoDraft(draft):await modules.applyDraftAction(draft,action);
+          renderView();
+        } catch(error){view.showError(error.message);}},
+        onSave:(...args)=>calls.push({save:args}),onNavigate:id=>calls.push({navigate:id}),
+        onFilter:value=>calls.push({filter:value}),onExport:()=>calls.push({export:true})});renderView();
+    }''')
+    return base, item
+
+
+@pytest.mark.parametrize('selection_app', ['complete_proposal'], indirect=True)
+def test_view_header_labels_focus_and_exact_source(page, selection_app):
+    _, item = mount_view(page, selection_app)
+    expect(page.locator('#review-summary')).to_contain_text('All displayed labels filled')
+    expect(page.locator('#review-summary')).to_contain_text('check for missed names')
+    page.get_by_role('button', name='1 software name', exact=True).click()
+    expect(page.locator('#software-cards article').first).to_be_focused()
+    page.get_by_role('button', name='Used', exact=True).click()
+    expect(page.get_by_role('dialog')).to_contain_text('scikit-learn')
+    page.get_by_role('button', name='Confirm Used', exact=True).click()
+    expect(page.locator('#software-cards')).to_contain_text('Unsaved')
+    assert page.locator('#passage').text_content() == item['task']['text']
+
+
+@pytest.mark.parametrize('selection_app', ['complete_proposal'], indirect=True)
+def test_view_exact_name_activates_without_edit_and_proposals_are_compact(page, selection_app):
+    _, item = mount_view(page, selection_app)
+    expect(page.locator('.proposal-details')).not_to_have_attribute('open', '')
+    page.get_by_role('button', name='4 proposals to confirm', exact=True).click()
+    expect(page.locator('.proposal-details')).to_have_attribute('open', '')
+    expect(page.locator('.proposal-details')).to_contain_text('Approve confirms these unchanged proposals together')
+    row = item['annotation']['occurrences'][0]
+    select_passage(page, row['name_span']['start'], row['name_span']['end'])
+    page.locator('#passage').dispatch_event('mouseup')
+    expect(page.locator('#selection-menu')).to_contain_text('Name already identified')
+    expect(page.get_by_role('button', name='Link version to scikit-learn', exact=True)).to_be_visible()
+    assert page.evaluate('draft.activeMentionId') == row['mention_id']
+    assert page.evaluate('draft.operations') == []
+    assert page.evaluate('draft.undoStack') == []
+    page.keyboard.press('Escape')
+    page.get_by_role('button', name='Approval scope', exact=True).click()
+    expect(page.get_by_role('dialog')).to_contain_text('including unchanged proposals')
+    expect(page.get_by_role('dialog')).to_contain_text('inside the owned region')
+    page.keyboard.press('Escape')
+    expect(page.get_by_role('button', name='Approval scope', exact=True)).to_be_focused()
+
+
+def test_view_selection_capture_keyboard_and_unknown(page, selection_app):
+    _, item = mount_view(page, selection_app)
+    select_passage(page, 8, 20)
+    page.locator('#passage').dispatch_event('mouseup')
+    expect(page.locator('#selection-menu')).to_be_visible()
+    page.get_by_role('button', name='Identify name', exact=True).click()
+    expect(page.locator('#software-cards')).to_contain_text('Unknown sentiment')
+    assert page.evaluate('draft.view.annotation.occurrences[0].name') == 'scikit-learn'
+    select_passage(page, 21, 26)
+    page.locator('#passage').dispatch_event('keyup', {'key':'Shift'})
+    page.get_by_role('button', name='Link version to scikit-learn', exact=True).focus()
+    page.keyboard.press('Escape')
+    expect(page.locator('#selection-menu')).to_be_hidden()
+    expect(page.locator('#passage')).to_be_focused()
+    assert page.locator('#passage').text_content() == item['task']['text']
+
+
+@pytest.mark.parametrize('selection_app', ['blind'], indirect=True)
+def test_view_blind_reconciliation_clicks_and_undo(page, selection_app):
+    _, item = mount_view(page, selection_app)
+    expect(page.locator('#software-cards article')).to_have_count(0)
+    expect(page.locator('#review-summary')).to_contain_text('Proposed names and labels are hidden')
+    original = item['annotation']['occurrences'][0]
+    select_passage(page, original['name_span']['start'], original['name_span']['end'] - 1)
+    page.locator('#passage').dispatch_event('mouseup')
+    page.get_by_role('button', name='Identify name', exact=True).click()
+    page.get_by_role('button', name='Show proposed labels', exact=True).click()
+    expect(page.get_by_role('button', name='Save', exact=True)).to_be_disabled()
+    page.get_by_role('button', name='Use ' + original['name'], exact=True).click()
+    expect(page.get_by_role('region', name='Discovery reconciliation')).to_have_count(0)
+    assert page.evaluate('draft.operations[0].fields') == ['software']
+    page.get_by_role('button', name='Undo', exact=True).click()
+    expect(page.get_by_role('region', name='Discovery reconciliation')).to_be_visible()
+    page.get_by_role('button', name='Discard discovery', exact=True).click()
+    expect(page.get_by_role('region', name='Discovery reconciliation')).to_have_count(0)
+    assert page.locator('#passage').text_content() == item['task']['text']
+
+
+@pytest.mark.parametrize('selection_app', ['complete_proposal'], indirect=True)
+def test_view_multiple_intents_evidence_unknown_and_reasons(page, selection_app):
+    _, item = mount_view(page, selection_app)
+    page.get_by_role('button', name='Edit intent', exact=True).click()
+    page.get_by_role('button', name='Set Shared', exact=True).click()
+    expect(page.get_by_role('button', name='Used', exact=True)).to_be_visible()
+    expect(page.get_by_role('button', name='Shared', exact=True)).to_be_visible()
+    page.get_by_role('button', name='Shared', exact=True).click()
+    expect(page.get_by_role('dialog')).to_contain_text(item['task']['text'])
+    page.get_by_role('button', name='Shared unresolved', exact=True).click()
+    expect(page.get_by_role('button', name='Shared unresolved', exact=True)).to_be_visible()
+    expect(page.get_by_role('button', name='Approve & next', exact=True)).to_be_disabled()
+    page.get_by_role('button', name='Correct name', exact=True).click()
+    page.get_by_label('Correction reason').select_option('other')
+    before = page.evaluate('draft.operations.length')
+    page.get_by_role('button', name='Remove name', exact=True).click()
+    assert page.evaluate('draft.operations.length') == before
+    page.get_by_label('Optional note').fill('The selected word is not software.')
+    page.get_by_role('button', name='Remove name', exact=True).click()
+    assert page.evaluate('draft.operations.at(-1).reason_code') == 'other'
+    expect(page.locator('#software-cards')).to_contain_text('No software names displayed')
+
+
+@pytest.mark.parametrize('selection_app', ['multi'], indirect=True)
+def test_view_three_member_aliases_explicit_evidence_cancel_delete(page, selection_app):
+    base, item = mount_view(page, selection_app)
+    text = item['task']['text']
+    page.evaluate('''async () => {
+      await act({type:'identify_name',span:{start:0,end:5}});renderView();
+    }''')
+    for name in ['A', 'Beta']:
+        start = text.index(name, 6)
+        select_passage(page, start, start + len(name))
+        page.locator('#passage').dispatch_event('mouseup')
+        page.get_by_role('button', name='Link alias…', exact=True).click()
+        page.get_by_label('Target member').select_option(label='Alpha')
+        page.get_by_label('Preferred name').select_option(label='Alpha')
+        if name == 'Beta':
+            page.get_by_label('Relation type').select_option('explicit_alternative_name')
+        expect(page.get_by_role('button', name='Stage alias link')).to_be_disabled()
+        before = page.evaluate('draft.operations.length')
+        page.get_by_role('button', name='Cancel', exact=True).click()
+        assert page.evaluate('draft.operations.length') == before
+        expect(page.locator('#passage')).to_be_focused()
+        select_passage(page, start, start + len(name))
+        page.locator('#passage').dispatch_event('mouseup')
+        page.get_by_role('button', name='Link alias…', exact=True).click()
+        page.get_by_label('Target member').select_option(label='Alpha')
+        if name == 'Beta':
+            page.get_by_label('Relation type').select_option('explicit_alternative_name')
+        page.get_by_role('button', name='Use displayed evidence', exact=True).click()
+        page.get_by_role('button', name='Stage alias link', exact=True).click()
+        expect(page.get_by_role('dialog')).to_have_count(0)
+    expect(page.get_by_role('region', name='Alias groups')).to_contain_text('Alpha / Beta / A')
+    assert len(page.evaluate('modules.aliasGroupsForDraft(draft)[0].members')) == 3
+    page.get_by_role('button', name='1 alias group', exact=True).click()
+    expect(page.get_by_role('region', name='Alias groups')).to_be_focused()
+    page.locator('#software-cards article').filter(has=page.get_by_role('button', name='Alpha', exact=True)).get_by_role('button', name='Correct name').click()
+    expect(page.get_by_role('dialog')).to_contain_text('Alpha / A')
+    expect(page.get_by_role('dialog')).to_contain_text('Alpha / Beta')
+    page.get_by_role('button', name='Close', exact=True).click()
+    page.get_by_role('region', name='Alias groups').get_by_role('button').first.click()
+    page.get_by_role('button', name='Checked: not an alias', exact=True).click()
+    expect(page.get_by_role('region', name='Alias groups')).to_contain_text('Checked non-alias')
+    save(page, base, 'view-three-aliases')
+
+
+@pytest.mark.parametrize('selection_app', ['complete_proposal'], indirect=True)
+def test_view_readonly_source_issue_callbacks_and_task_switch(page, selection_app):
+    _, item = mount_view(page, selection_app)
+    page.evaluate('''() => {
+      sessionState={readOnly:true};renderView();
+    }''')
+    expect(page.locator('#review-summary')).to_contain_text('Partial source coverage')
+    expect(page.locator('#review-footer')).to_contain_text('Read-only review')
+    page.get_by_role('button', name='Positive', exact=True).click()
+    expect(page.get_by_role('button', name='Negative', exact=True)).to_be_disabled()
+    page.keyboard.press('Escape')
+    page.evaluate('''() => {
+      sessionState={};queue=[{task_id:draft.view.task.task_id},{task_id:'next-task'}];renderView();
+    }''')
+    page.get_by_role('button', name='Approve & next', exact=True).click()
+    assert page.evaluate('calls.at(-1)') == {'save': ['approve', 'next-task']}
+    page.evaluate('''() => {
+      draft.view.annotation.review_workflow={source_issues:[{issue_id:'fixture-issue',code:'broken_passage',message:'Sentence is truncated.'}]};
+      draft.operations=[{action:'record_note',note:'fixture'}];renderView();
+    }''')
+    expect(page.get_by_role('button', name='Approve & next', exact=True)).to_be_disabled()
+    expect(page.get_by_text('Source issue blocks approval')).to_be_visible()
+    select_passage(page, 18, 30)
+    page.locator('#passage').dispatch_event('mouseup')
+    page.evaluate('''() => {draft.view.task.task_id='different';renderView();}''')
+    expect(page.locator('#selection-menu')).to_be_hidden()
+    assert page.locator('#passage').text_content() == item['task']['text']
+
+
+@pytest.mark.parametrize('width', [1440, 390])
+@pytest.mark.parametrize('selection_app', ['complete_proposal'], indirect=True)
+def test_view_responsive_contrast_and_screenshots(page, selection_app, width):
+    page.set_viewport_size({'width': width, 'height': 1000})
+    _, item = mount_view(page, selection_app)
+    page.evaluate('''() => {queue=[{task_id:draft.view.task.task_id,review_summary:{workflow_status:'pending'}},{task_id:'next',review_summary:{workflow_status:'in_progress'}}];renderView();}''')
+    assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+    colors = page.locator('[data-label="used"]').evaluate('''node => {
+      const style=getComputedStyle(node); return {fg:style.color,bg:style.backgroundColor};
+    }''')
+    assert colors == {'fg': 'rgb(30, 64, 175)', 'bg': 'rgb(219, 234, 254)'}
+    contrast = page.locator('[data-label="used"], [data-label="positive"]').evaluate_all(r'''nodes => {
+      const luminance=color=>color.match(/\d+/g).slice(0,3).map(Number).map(x=>x/255).map(x=>x<=0.04045?x/12.92:((x+0.055)/1.055)**2.4).reduce((s,x,i)=>s+x*[0.2126,0.7152,0.0722][i],0);
+      return nodes.map(node=>{const s=getComputedStyle(node),a=luminance(s.color),b=luminance(s.backgroundColor);return (Math.max(a,b)+0.05)/(Math.min(a,b)+0.05);});
+    }''')
+    assert min(contrast) >= 4.5
+    page.get_by_role('button', name='Used', exact=True).focus()
+    assert page.locator('[data-label="used"]').evaluate('node => getComputedStyle(node).outlineStyle') != 'none'
+    shots = Path('.superpowers/sdd/2026-09-25-scibert-selection-review/screenshots')
+    shots.mkdir(parents=True, exist_ok=True)
+    page.screenshot(path=str(shots / f'task5-{width}.png'), full_page=True)
+    select_passage(page, 18, 30)
+    page.locator('#passage').dispatch_event('mouseup')
+    menu = page.locator('#selection-menu').bounding_box()
+    assert menu['x'] >= 0 and menu['x'] + menu['width'] <= width
+    page.screenshot(path=str(shots / f'task5-selection-{width}.png'), full_page=True)
+    page.keyboard.press('Escape')
+    expect(page.locator('#passage')).to_be_focused()
+    assert page.locator('#passage').text_content() == item['task']['text']
+    version = page.get_by_role('button', name='v0.17', exact=True)
+    version.focus()
+    page.wait_for_function('''() => {
+      const focused=document.activeElement.getBoundingClientRect(),footer=document.querySelector('#review-footer').getBoundingClientRect();
+      return focused.bottom < footer.top;
+    }''')
+
+
+def test_view_physical_drag_tab_and_escape(page, selection_app):
+    _, item = mount_view(page, selection_app)
+    box = page.locator('#passage').evaluate('''node => {
+      const range=document.createRange();range.setStart(node.firstChild,8);range.setEnd(node.firstChild,20);
+      const r=range.getBoundingClientRect();return {left:r.left,right:r.right,y:(r.top+r.bottom)/2};
+    }''')
+    page.mouse.move(box['left'] + 1, box['y'])
+    page.mouse.down()
+    page.mouse.move(box['right'] - 1, box['y'], steps=15)
+    page.mouse.up()
+    expect(page.locator('#selection-menu')).to_be_visible()
+    page.keyboard.press('Tab')
+    expect(page.get_by_role('button', name='Identify name', exact=True)).to_be_focused()
+    page.keyboard.press('Enter')
+    expect(page.locator('#software-cards')).to_contain_text('scikit-learn')
+    assert page.locator('#passage').text_content() == item['task']['text']
+
+
+@pytest.mark.parametrize('selection_app', ['complete_proposal'], indirect=True)
+def test_view_target_chooser_version_and_live_confirmed_state(page, selection_app):
+    base, item = mount_view(page, selection_app)
+    start = item['task']['text'].index('v0.17')
+    select_passage(page, start, start + 5)
+    page.locator('#passage').dispatch_event('mouseup')
+    page.get_by_role('button', name='Link version…', exact=True).click()
+    expect(page.get_by_role('dialog')).to_contain_text('Choose the software name')
+    page.get_by_role('dialog').get_by_role('button', name='scikit-learn', exact=True).click()
+    assert page.evaluate('draft.operations') == []  # Existing version edge is a no-op.
+    page.get_by_role('button', name='Used', exact=True).click()
+    page.get_by_role('button', name='Confirm Used', exact=True).click()
+    save(page, base, 'view-confirm-used')
+    loaded = page.request.get(base + '/api/tasks/' + item['task']['task_id']).json()
+    page.evaluate('''item => {draft=modules.createDraft(item);renderView();}''', loaded)
+    expect(page.locator('#software-cards')).to_contain_text('Confirmed')
+    expect(page.locator('#software-cards')).not_to_contain_text('Unsaved')
+
+
+@pytest.mark.parametrize('selection_app', ['context'], indirect=True)
+def test_view_context_boundaries_are_visible_without_changing_text(page, selection_app):
+    _, item = mount_view(page, selection_app)
+    expect(page.locator('.source-context')).to_have_text('ContextTool. ')
+    expect(page.locator('.reading-hint')).to_contain_text('surrounding context is for evidence only')
+    expect(page.locator('.source-guide')).to_contain_text('Review this region: unshaded text. Context: shaded text')
+    expect(page.locator('.source-identity')).to_have_text('Document: ' + item['task']['document_id'])
+    assert page.locator('#passage').text_content() == item['task']['text']
+
+
+@pytest.mark.parametrize('partial', [True, False])
+@pytest.mark.parametrize('selection_app', ['complete_proposal'], indirect=True)
+def test_view_approved_state_and_clean_next(page, selection_app, partial):
+    base, item = mount_view(page, selection_app)
+    # Use real server approval metadata, then vary source coverage in the render-only fixture.
+    envelope = page.evaluate("modules.buildBatch(draft,{completion:'approve',reviewer:'Krushi',decisionId:'view-approval'})")
+    token = page.request.get(base + '/api/session').json()['csrf_token']
+    response = page.request.post(base + '/api/decisions', data=envelope,
+                                 headers={'Origin': base, 'X-CSRF-Token': token})
+    assert response.ok, response.text()
+    loaded = page.request.get(base + '/api/tasks/' + item['task']['task_id']).json()
+    loaded['review_summary']['partial_source_coverage'] = partial
+    page.evaluate('''item => {draft=modules.createDraft(item);queue=[{task_id:item.task.task_id},{task_id:'next'}];renderView();}''', loaded)
+    expect(page.locator('#review-summary')).to_contain_text('Labels and name check approved')
+    if partial:
+        expect(page.locator('#review-summary')).to_contain_text('partial source coverage remains')
+    expect(page.locator('#review-summary')).not_to_contain_text('check for missed names')
+    expect(page.get_by_role('button', name='Save', exact=True)).to_be_disabled()
+    page.get_by_role('button', name='Save & next', exact=True).click()
+    assert page.evaluate('calls.at(-1)') == {'save': ['save', 'next']}
+
+
+def test_view_empty_source_blocker_can_skip_without_approval(page, selection_app):
+    mount_view(page, selection_app)
+    page.evaluate('''() => {
+      draft.view.annotation.review_workflow={source_issues:[{issue_id:'source',code:'broken_passage',message:'Missing source text.'}]};
+      draft.base.review_summary={...draft.base.review_summary,source_issues:draft.view.annotation.review_workflow.source_issues,can_approve:false,workflow_status:'source_issue'};
+      queue=[{task_id:draft.view.task.task_id},{task_id:'next',document_id:'next-document'}];renderView();
+    }''')
+    expect(page.locator('#review-summary')).to_contain_text('Source issue: repair needed before approval')
+    expect(page.locator('#review-summary')).not_to_contain_text('All displayed labels filled')
+    expect(page.get_by_role('button', name='Approve & next', exact=True)).to_be_disabled()
+    page.get_by_role('button', name='Save & next', exact=True).click()
+    assert page.evaluate('calls.at(-1)') == {'save': ['save', 'next']}
+    page.get_by_role('button', name='Open passage 2: next-document', exact=True).click()
+    assert page.evaluate('calls.at(-1)') == {'navigate': 'next'}
+
+
+@pytest.mark.parametrize('selection_app', ['complete_proposal'], indirect=True)
+def test_view_all_rendered_label_colors_meet_contrast(page, selection_app):
+    mount_view(page, selection_app)
+    ratios = page.evaluate(r'''async () => {
+      const ratios={};
+      const luminance=color=>color.match(/\d+/g).slice(0,3).map(Number).map(x=>x/255).map(x=>x<=0.04045?x/12.92:((x+0.055)/1.055)**2.4).reduce((s,x,i)=>s+x*[0.2126,0.7152,0.0722][i],0);
+      const measure=label=>{const s=getComputedStyle(document.querySelector(`[data-label="${label}"]`));const a=luminance(s.color),b=luminance(s.backgroundColor);ratios[label]=(Math.max(a,b)+0.05)/(Math.min(a,b)+0.05);};
+      const mentionId=draft.view.annotation.occurrences[0].mention_id;
+      measure('used');
+      for(const field of ['created','shared']){await act({type:'set_field',mentionId,field,value:true});renderView();measure(field);}
+      for(const value of ['positive','negative','mixed','not_expressed']){await act({type:'set_field',mentionId,field:'sentiment',value});renderView();measure(value);}
+      await act({type:'set_field',mentionId,field:'intents',value:'mentioned'});renderView();measure('mentioned');
+      return ratios;
+    }''')
+    assert len(ratios) == 8
+    assert min(ratios.values()) >= 4.5, ratios
+
+
+def test_view_null_draft_queue_start_and_finish_clear_selection(page, selection_app):
+    mount_view(page, selection_app)
+    select_passage(page, 8, 20)
+    page.locator('#passage').dispatch_event('mouseup')
+    page.evaluate('''() => view.render(null,null,[{task_id:'pending-task',document_id:'pending-document'}],{})''')
+    expect(page.locator('#review-summary')).to_contain_text('Choose a passage to review')
+    expect(page.locator('#passage')).to_be_hidden()
+    expect(page.locator('#selection-menu')).to_be_hidden()
+    expect(page.locator('#software-cards article')).to_have_count(0)
+    page.get_by_role('button', name='Open passage 1: pending-document', exact=True).click()
+    assert page.evaluate('calls.at(-1)') == {'navigate': 'pending-task'}
+    page.evaluate('''() => view.render(null,null,[],{finished:true,reviewProgress:{total:7,approved:2,pending:2,in_progress:1,source_issue:2}})''')
+    expect(page.locator('#review-summary')).to_contain_text('End of the current queue')
+    expect(page.locator('#review-summary')).to_contain_text('2 approved of 7. 2 pending, 1 in progress, 2 source issues.')
+    expect(page.get_by_role('button', name='Approve & next', exact=True)).to_be_disabled()
+    page.evaluate('renderView()')
+    expect(page.locator('#passage')).to_be_visible()
 
 
 def test_identify_unknown_undo_redo_and_real_save(page, selection_app):

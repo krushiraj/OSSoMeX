@@ -2,6 +2,7 @@ from copy import deepcopy
 
 from alias_fixtures import alias_item
 from research.annotations.tasks import make_region_task
+from research.contracts import FIELDS, validate_occurrence
 
 
 def workflow_item():
@@ -37,7 +38,8 @@ def selection_item(variant=None):
             occurrence['known']['shared'] = False
             item['annotation']['status'] = 'partial'
         return item
-    text = ('Alpha (A) also called Beta.' if variant == 'multi' else
+    text = ('We used excellent scikit-learn v0.17.' if variant in ('complete_proposal', 'complete_proposal_ui') else
+            'Alpha (A) also called Beta.' if variant == 'multi' else
             '😀 Cafe\u0301 uses NumPy and NumPy v2.' if variant == 'unicode' else
             'ContextTool. We used scikit-learn v0.17.' if variant == 'context' else
             'We used scikit-learn v0.17.')
@@ -49,6 +51,22 @@ def selection_item(variant=None):
                            {'start': start, 'end': len(text)}, {'start': 0, 'end': len(text)},
                            region_kind='sentence' if variant == 'context' else 'region')
     task['whole_passage_audit'] = False
-    return {'task': task, 'annotation': {'occurrences': [], 'covered_regions': [],
+    item = {'task': task, 'annotation': {'occurrences': [], 'covered_regions': [],
             'unresolved_regions': [task['annotation_region']], 'status': 'partial',
             'annotation_revision': 1, 'review_status': 'synthetic_fixture'}}
+    if variant in ('complete_proposal', 'complete_proposal_ui'):
+        span = lambda value: {'start': text.index(value), 'end': text.index(value) + len(value)}
+        name_span = span('scikit-learn')
+        occurrence = {'schema_version': '2.0', 'document_id': task['document_id'],
+                      'text_revision': task['text_revision'],
+                      'mention_id': f"{task['document_id']}|{task['text_revision']}|{name_span['start']}:{name_span['end']}",
+                      'name': 'scikit-learn', 'name_span': name_span,
+                      'context_sentence': text, 'context_span': {'start': 0, 'end': len(text)},
+                      'context_kind': 'sentence', 'version_status': 'explicit',
+                      'version_links': [{'text': 'v0.17', 'span': span('v0.17'), 'status': 'explicit_local'}],
+                      'intents': ['used'], 'sentiment': 'positive', 'known': dict.fromkeys(FIELDS, True),
+                      'evidence': {'intents': [span(text)], 'sentiment': [span('excellent')]},
+                      'review': {'status': 'pending', 'reasons': []}}
+        validate_occurrence(occurrence, text)
+        item['annotation']['occurrences'] = [occurrence]
+    return item
