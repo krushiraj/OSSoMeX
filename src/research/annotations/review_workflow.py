@@ -7,7 +7,7 @@ import re
 
 from ..contracts import FIELDS, INTENT_BITS
 from ..data.manifest import digest, json_bytes
-from .aliases import build_alias_groups
+from .aliases import alias_relation_id, build_alias_groups
 
 
 WORKFLOW_VERSION = '1.0'
@@ -162,8 +162,11 @@ def _validate_field_stamp(item: dict, records: dict[str, dict], mid: str,
         if expected_hash != stamp['value_hash']:
             raise ValueError('WORKFLOW_REVIEW_HASH_MISMATCH')
     historical = row['result'].get('field_hashes')
+    if operation['action'] == 'accept_fields' and not isinstance(historical, dict):
+        raise ValueError('WORKFLOW_REVIEW_HASH_MISMATCH')
     if isinstance(historical, dict):
-        stored = historical.get(mid, {}).get(field)
+        scoped = historical.get(mid)
+        stored = scoped.get(field) if isinstance(scoped, dict) else None
         if stored != stamp['value_hash']:
             raise ValueError('WORKFLOW_REVIEW_HASH_MISMATCH')
 
@@ -186,8 +189,11 @@ def _validate_source_issue(task: dict, issue: dict, records: dict[str, dict]) ->
         raise ValueError('WORKFLOW_SOURCE_ISSUE_INVALID')
     row = _matching_row(records, issue['decision_id'], issue['reviewer'], issue['recorded_at_utc'])
     operation = _operation(row, issue['operation_id'])
-    if operation.get('action') != 'record_source_issue' or not isinstance(operation.get('value'), dict) \
-            or operation['value'].get('issue_id') != issue['issue_id']:
+    value = operation.get('value')
+    source_fields = ('issue_id', 'code', 'message', 'span', 'task_id', 'text_revision',
+                     'document_id', 'source_report_sha256')
+    if operation.get('action') != 'record_source_issue' or not isinstance(value, dict) \
+            or any(issue.get(key) != value.get(key) for key in source_fields):
         raise ValueError('WORKFLOW_SOURCE_ISSUE_REFERENCE_MISMATCH')
 
 
@@ -294,7 +300,8 @@ def _field_state(item: dict, occurrence: dict, field: str, records: dict[str, di
     reviews = (item['annotation'].get('review_workflow') or {}).get('field_reviews', {})
     stamp = reviews.get(occurrence['mention_id'], {}).get(field)
     if stamp is not None and stamp['value_hash'] == field_fingerprint(item['task'], occurrence, field):
-        return stamp['state']
+        if stamp['state'] == 'unresolved' or occurrence['known'][field]:
+            return stamp['state']
     if not occurrence['known'][field]:
         if (field == 'versions' and occurrence['version_status'] == 'ambiguous') \
                 or (isinstance(occurrence.get('review'), dict)
@@ -316,17 +323,32 @@ def _relation_confirmed(relation: dict, records: dict[str, dict]) -> bool:
         return False
     payload = row['payload']
     action = payload.get('action')
-    target = relation['relation_id']
     if action == 'apply_review_batch':
+        if payload.get('actor_kind') != 'human':
+            return False
         try:
             operation = _operation(row, review.get('operation_id'))
         except ValueError:
             return False
         action = operation.get('action')
-        target = operation.get('target_relation_id') or (operation.get('value') or {}).get('relation_id')
+        target = operation.get('target_relation_id')
+        if action == 'upsert_alias':
+            value = operation.get('value')
+            fields = ('member_mention_ids', 'relation_type', 'decision',
+                      'preferred_mention_id', 'evidence_spans')
+            if not isinstance(value, dict) or any(key not in value for key in fields):
+                return False
+            members = value['member_mention_ids']
+            if not isinstance(members, list) or any(not isinstance(mid, str) for mid in members):
+                return False
+            expected_id = alias_relation_id(relation['document_id'], relation['text_revision'], members)
+            if expected_id != relation['relation_id'] or target not in (None, relation['relation_id']):
+                return False
+            return relation.get('member_mention_ids') == sorted(members) and all(
+                relation.get(key) == value[key] for key in fields[1:])
     else:
-        target = payload.get('target_relation_id') or (payload.get('value') or {}).get('relation_id')
-    return action in ('upsert_alias', 'accept_alias', 'reject_alias') and target == relation['relation_id']
+        target = payload.get('target_relation_id')
+    return action in ('accept_alias', 'reject_alias') and target == relation['relation_id']
 
 
 def _unit_questions(mid: str, fields: dict[str, dict], requested: set[str], occurrence: dict) -> list[dict]:

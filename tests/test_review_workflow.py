@@ -234,6 +234,97 @@ def test_batch_alias_acceptance_confirms_only_its_relation():
     assert result['name_audit'] == 'pending'
 
 
+def test_confirmed_stamp_cannot_confirm_an_unknown_mask():
+    item = workflow_item()
+    occurrence = item['annotation']['occurrences'][0]
+    occurrence['known']['sentiment'] = False
+    occurrence['sentiment'] = None
+    operation = field_operation(occurrence, ['sentiment'])
+    payload = batch(item, [operation])
+    recorded = '2026-09-25T00:00:00+00:00'
+    item['annotation']['review_workflow'] = {'schema_version': '1.0',
+        'field_reviews': {occurrence['mention_id']: {'sentiment': {
+            'state': 'confirmed', 'value_hash': field_fingerprint(item['task'], occurrence, 'sentiment'),
+            'decision_id': 'batch-1', 'operation_id': 'op-1', 'reviewer': 'Krushi',
+            'recorded_at_utc': recorded}}}, 'source_issues': [], 'approval': None}
+    history = [{'payload': payload, 'result': {'decision_id': 'batch-1'}, 'recorded_at': recorded}]
+    result = project_review(item, history)
+    assert result['fields'][occurrence['mention_id']]['sentiment']['state'] == 'missing'
+    assert not result['can_approve']
+
+
+def test_accept_fields_stamp_requires_logged_result_hash():
+    item = workflow_item()
+    occurrence = item['annotation']['occurrences'][0]
+    operation = {'operation_id': 'accept-op', 'action': 'accept_fields',
+                 'target_name_span': deepcopy(occurrence['name_span']),
+                 'fields': ['created'], 'reason_code': 'accept_proposal'}
+    payload = batch(item, [operation])
+    recorded = '2026-09-25T00:00:00+00:00'
+    value_hash = field_fingerprint(item['task'], occurrence, 'created')
+    item['annotation']['review_workflow'] = {'schema_version': '1.0',
+        'field_reviews': {occurrence['mention_id']: {'created': {
+            'state': 'confirmed', 'value_hash': value_hash, 'decision_id': 'batch-1',
+            'operation_id': 'accept-op', 'reviewer': 'Krushi', 'recorded_at_utc': recorded}}},
+        'source_issues': [], 'approval': None}
+    history = [{'payload': payload, 'result': {'decision_id': 'batch-1'}, 'recorded_at': recorded}]
+    with pytest.raises(ValueError, match='WORKFLOW_REVIEW_HASH_MISMATCH'):
+        validate_workflow(item, history)
+    history[0]['result']['field_hashes'] = {occurrence['mention_id']: {'created': value_hash}}
+    assert project_review(item, history)['fields'][occurrence['mention_id']]['created']['state'] == 'confirmed'
+
+
+@pytest.mark.parametrize('changed', ['code', 'span', 'message', 'source_report_sha256'])
+def test_source_issue_must_match_logged_content(changed):
+    item = workflow_item()
+    history = _source_issue(item)
+    issue = item['annotation']['review_workflow']['source_issues'][0]
+    if changed == 'source_report_sha256':
+        issue[changed] = 'a' * 64
+    elif changed == 'span':
+        issue[changed] = {'start': issue['span']['start'] + 1, 'end': issue['span']['end']}
+    else:
+        issue[changed] = 'boundary_fragment' if changed == 'code' else 'Different source text'
+    with pytest.raises(ValueError, match='WORKFLOW_SOURCE_ISSUE_REFERENCE_MISMATCH'):
+        validate_workflow(item, history)
+
+
+def test_legacy_alias_upsert_stays_proposed():
+    item = workflow_item()
+    relation = item['annotation']['alias_annotations']['relations'][0]
+    recorded = '2026-09-25T00:00:00+00:00'
+    payload = batch(item, [], ident='legacy-alias')
+    payload.update(action='upsert_alias', target_relation_id=relation['relation_id'],
+                   value={key: deepcopy(relation[key]) for key in
+                          ('member_mention_ids', 'relation_type', 'decision',
+                           'preferred_mention_id', 'evidence_spans')})
+    relation['review'] = {'status': 'human_reviewed', 'reasons': [],
+                          'decision_id': 'legacy-alias', 'reviewer': 'Krushi',
+                          'recorded_at_utc': recorded}
+    history = [{'payload': payload, 'result': {'decision_id': 'legacy-alias'}, 'recorded_at': recorded}]
+    assert project_review(item, history)['relations'][relation['relation_id']]['state'] == 'proposed'
+
+
+def test_batch_alias_upsert_confirms_only_matching_relation_content():
+    item = workflow_item()
+    relation = item['annotation']['alias_annotations']['relations'][0]
+    value = {key: deepcopy(relation[key]) for key in
+             ('member_mention_ids', 'relation_type', 'decision',
+              'preferred_mention_id', 'evidence_spans')}
+    value['member_mention_ids'].reverse()
+    operation = {'operation_id': 'alias-upsert', 'action': 'upsert_alias',
+                 'value': value, 'reason_code': 'link_alias'}
+    payload = batch(item, [operation], ident='alias-batch')
+    recorded = '2026-09-25T00:00:00+00:00'
+    relation['review'] = {'status': 'human_reviewed', 'reasons': [],
+                          'decision_id': 'alias-batch', 'operation_id': 'alias-upsert',
+                          'reviewer': 'Krushi', 'recorded_at_utc': recorded}
+    history = [{'payload': payload, 'result': {'decision_id': 'alias-batch'}, 'recorded_at': recorded}]
+    assert project_review(item, history)['relations'][relation['relation_id']]['state'] == 'confirmed'
+    relation['evidence_spans'].append(deepcopy(relation['evidence_spans'][0]))
+    assert project_review(item, history)['relations'][relation['relation_id']]['state'] == 'proposed'
+
+
 def test_legacy_upsert_does_not_confirm_every_field_or_name_audit():
     item = workflow_item()
     occurrence = item['annotation']['occurrences'][0]
