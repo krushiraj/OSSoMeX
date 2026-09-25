@@ -93,7 +93,7 @@ def review_app(tmp_path,request):
     write_jsonl(bundle/'items.jsonl',items)
     write_once(bundle/'manifest.json',json_bytes({'role':'demo','files':[{'path':'items.jsonl','sha256':digest((bundle/'items.jsonl').read_bytes())}]}))
     database=tmp_path/'review.sqlite'
-    app=create_server(bundle,database,'127.0.0.1',0)
+    app=create_server(bundle,database,'127.0.0.1',0,ui='legacy')
     thread=threading.Thread(target=app.serve_forever,daemon=True);thread.start()
     yield app, bundle, database
     app.shutdown();thread.join();app.server_close()
@@ -357,7 +357,7 @@ def test_browser_unicode_save_restart_export_and_stale_tab(page, browser, review
     stale.get_by_text('STALE_REVISION',exact=False).wait_for()
     stale.close()
     # Restart a second listener against the same durable store (not browser storage).
-    other=create_server(bundle,database,'127.0.0.1',0)
+    other=create_server(bundle,database,'127.0.0.1',0,ui='legacy')
     thread=threading.Thread(target=other.serve_forever,daemon=True);thread.start()
     try:
         page.goto(f'http://127.0.0.1:{other.server_port}')

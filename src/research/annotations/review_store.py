@@ -11,7 +11,7 @@ from .validation import validate_task_occurrence
 from .alias_decisions import ALIAS_ACTIONS, validate_annotation_aliases
 from .review_batches import apply_batch, result_metadata
 from .review_mutations import reduce_mutation
-from .review_workflow import validate_workflow
+from .review_workflow import project_review, validate_workflow
 
 
 class ReviewError(ValueError):
@@ -65,6 +65,7 @@ def import_items(c, items: list[dict], role: str, policy_provenance: dict | None
                 if before['original_hash']!=original: raise ReviewError('SOURCE_CONFLICT')
                 continue
             task={**task,'occurrence_audit_ids':item.get('occurrence_audit_ids',[])}
+            validate_workflow({'task':task,'annotation':annotation,'annotation_revision':1,'status':'unreviewed'},[])
             c.execute('INSERT INTO items VALUES (?,?,?,?,?,?)',
                       (tid,original,json.dumps(task),json.dumps(annotation),1,'unreviewed'))
         c.commit()
@@ -84,9 +85,13 @@ def get_item(c, task_id: str) -> dict:
 def queue(c, filters=None) -> dict:
     from .routing import alias_review_reasons, review_reasons
     filters=filters or {}; rows=[]; reviewed=0
+    review_progress=dict.fromkeys(('total','pending','in_progress','approved','source_issue'),0)
     for row in c.execute('SELECT task_id,status FROM items ORDER BY task_id'):
         item=get_item(c,row['task_id']); task=item['task']; annotation=item['annotation']
         reviewed+=item['status']=='reviewed'
+        summary=project_review(item,decision_history(c,task['task_id']))
+        review_progress['total']+=1
+        review_progress[summary['workflow_status']]+=1
         reasons=sorted(set(r for o in annotation['occurrences'] for r in review_reasons(o,None)))
         reasons.extend(alias_review_reasons(annotation))
         if task.get('whole_passage_audit'): reasons.append('whole_passage_audit')
@@ -94,14 +99,15 @@ def queue(c, filters=None) -> dict:
         if annotation.get('status')=='partial': reasons.append('partial_annotation')
         entry={'task_id':task['task_id'],'document_id':task['document_id'],'source':task.get('source'),
                'split':task.get('split'),'status':item['status'],'reasons':sorted(set(reasons)),
-               'annotation_revision':item['annotation_revision']}
+               'annotation_revision':item['annotation_revision'],'review_summary':summary}
         field=filters.get('field')
         if field and not any(not o.get('known',{}).get(field,False) for o in annotation['occurrences']): continue
         if any(filters.get(k) and filters[k] not in ('all',str(entry.get(k))) for k in ('status','source')): continue
         if filters.get('reason') and filters['reason'] not in entry['reasons']: continue
+        if filters.get('workflow_status') not in (None,'all',summary['workflow_status']): continue
         rows.append(entry)
     return {'items':rows,'progress':{'total':c.execute('SELECT count(*) FROM items').fetchone()[0],'reviewed':reviewed},
-            'quality':'provisional'}
+            'review_progress':review_progress,'quality':'provisional'}
 
 
 def decision_history(c, task_id: str) -> list[dict]:
@@ -162,7 +168,7 @@ def apply_decision(c, decision: dict) -> dict:
 
 
 def export_reference(c, destination: Path) -> dict:
-    from .snapshots import LEGACY_PROVENANCE, SNAPSHOT_VERSION, reference_rows, validate_item_policy, write_policy_provenance
+    from .snapshots import LEGACY_PROVENANCE, snapshot_format, reference_rows, validate_item_policy, validate_review_history, write_policy_provenance
     if destination.exists(): raise FileExistsError(destination)
     c.execute('BEGIN')
     try:
@@ -176,14 +182,14 @@ def export_reference(c, destination: Path) -> dict:
         c.rollback();raise
     provenance=json.loads(next((row['value'] for row in metadata if row['key']=='policy_sources'),json.dumps(LEGACY_PROVENANCE)))
     validate_item_policy(items,provenance,role)
+    validate_review_history(items,decision_records)
     files=reference_rows(items,decision_records)
     files.update({'store-items.jsonl':store_items,'decision-records.jsonl':decision_records,'metadata.jsonl':metadata})
     destination.mkdir(parents=True)
     for name,rows in files.items():write_jsonl(destination/name,rows)
     sources=write_policy_provenance(destination,provenance)
     manifest={**sources,'role':role,'quality':'provisional','task_count':len(items), 'decision_count':len(decision_records),
-              'snapshot_schema_version':SNAPSHOT_VERSION,'alias_schema_version':'1.0',
-              'capabilities':{'aliases':True,'exact_store_restore':True},
+              **snapshot_format(items),'alias_schema_version':'1.0',
               'files':[{'path':n,'sha256':digest((destination/n).read_bytes())} for n in files]+sources['files']}
     write_once(destination/'manifest.json',json_bytes(manifest))
     return manifest

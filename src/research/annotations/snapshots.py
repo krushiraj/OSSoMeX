@@ -11,9 +11,68 @@ from .alias_decisions import validate_annotation_aliases
 from .aliases import build_alias_groups
 from .policies import load_policy
 from .validation import validate_task_occurrence
+from .review_workflow import validate_workflow
 
 LEGACY_PROVENANCE={'kind':'legacy_no_frozen_policy_source'}
 SNAPSHOT_VERSION='1.0'
+WORKFLOW_SNAPSHOT_VERSION='1.1'
+
+
+def snapshot_format(items: list[dict]) -> dict:
+    workflow=any('review_workflow' in item['annotation'] for item in items)
+    result={'snapshot_schema_version':WORKFLOW_SNAPSHOT_VERSION if workflow else SNAPSHOT_VERSION,
+            'capabilities':{'aliases':True,'exact_store_restore':True}}
+    if workflow:
+        result['capabilities']['review_workflow']=True
+        result['review_workflow_schema_version']='1.0'
+    return result
+
+
+def validate_review_history(items: list[dict], decision_records: list[dict]) -> None:
+    _validate_decision_rows(decision_records,items)
+    histories={item['task']['task_id']:[] for item in items}
+    for row in decision_records:
+        if row['task_id'] not in histories: raise ValueError('SNAPSHOT_DECISION_REFERENCE')
+        payload=json.loads(row['payload']); result=json.loads(row['result'])
+        if payload.get('action')=='apply_review_batch':
+            _validate_batch_record(payload,result)
+        histories[row['task_id']].append({'payload':payload,'result':result,'recorded_at':row['recorded_at']})
+    for item in items:
+        history=histories[item['task']['task_id']]
+        if 'review_workflow' not in item['annotation'] and any(
+                row['payload'].get('action')=='apply_review_batch' for row in history):
+            raise ValueError('SNAPSHOT_WORKFLOW_REQUIRED')
+        validate_workflow(item,history)
+
+
+def _validate_batch_record(payload: dict, result: dict) -> None:
+    from .review_batches import _validate_operation
+    value=payload.get('value'); actor=payload.get('actor_kind')
+    if (not isinstance(value,dict) or set(value)!={'schema_version','completion','proposals_revealed','operations'}
+            or value['schema_version']!='1.0' or value['completion'] not in ('save','approve')
+            or type(value['proposals_revealed']) is not bool or actor not in ('human','system')
+            or not isinstance(value['operations'],list) or len(value['operations'])>200):
+        raise ValueError('SNAPSHOT_BATCH_INVALID')
+    generated=result.get('approval_operations'); outcomes=result.get('operation_results')
+    if not isinstance(generated,list) or not isinstance(outcomes,list) or not isinstance(result.get('field_hashes'),dict):
+        raise ValueError('SNAPSHOT_BATCH_RESULT_INVALID')
+    operations=value['operations']+generated
+    for operation in operations: _validate_operation(operation)
+    if (len({op['operation_id'] for op in operations})!=len(operations)
+            or len(outcomes)!=len(operations)
+            or any(not isinstance(outcome,dict) or outcome.get('operation')!=operation
+                   or outcome.get('operation_id')!=operation['operation_id']
+                   or outcome.get('action')!=operation['action']
+                   or outcome.get('generated') is not (index>=len(value['operations']))
+                   or not {'before','after'}<=outcome.keys()
+                   for index,(operation,outcome) in enumerate(zip(operations,outcomes)))):
+        raise ValueError('SNAPSHOT_BATCH_RESULT_INVALID')
+    if (actor=='system' and (value['completion']!='save' or any(
+            op['action'] not in ('record_note','record_source_issue') for op in operations))
+            or value['completion']=='approve' and not value['proposals_revealed']
+            or generated and (actor!='human' or value['completion']!='approve' or any(
+                op['action'] not in ('accept_fields','accept_alias','reject_alias') for op in generated))):
+        raise ValueError('SNAPSHOT_BATCH_ACTOR_INVALID')
 
 
 def read_policy_provenance(bundle: Path, manifest: dict) -> dict:
@@ -157,11 +216,18 @@ def read_review_snapshot(bundle: Path) -> tuple[dict, dict]:
     required={'store-items.jsonl','decision-records.jsonl','metadata.jsonl','items.jsonl',
               'occurrences.jsonl','coverage.jsonl','decisions.jsonl','aliases.jsonl','alias_groups.jsonl'}
     records=manifest.get('files',[]); paths=[r['path'] for r in records]
-    if manifest.get('snapshot_schema_version')!=SNAPSHOT_VERSION or not required<=set(paths):
+    version=manifest.get('snapshot_schema_version')
+    if version not in (SNAPSHOT_VERSION,WORKFLOW_SNAPSHOT_VERSION) or not required<=set(paths):
         raise ValueError('SNAPSHOT_RESTORE_UNSUPPORTED')
     if len(paths)!=len(set(paths)): raise ValueError('SNAPSHOT_DUPLICATE_FILE')
     if manifest.get('role') not in ('train','dev','demo'): raise ValueError('SPLIT_NOT_PERMITTED')
-    if manifest.get('alias_schema_version')!='1.0' or manifest.get('capabilities')!={'aliases':True,'exact_store_restore':True}:
+    capabilities={'aliases':True,'exact_store_restore':True}
+    if version==WORKFLOW_SNAPSHOT_VERSION:
+        capabilities['review_workflow']=True
+        if manifest.get('review_workflow_schema_version')!='1.0': raise ValueError('SNAPSHOT_RESTORE_UNSUPPORTED')
+    elif 'review_workflow_schema_version' in manifest: raise ValueError('SNAPSHOT_RESTORE_UNSUPPORTED')
+    if (manifest.get('alias_schema_version')!='1.0' or manifest.get('capabilities')!=capabilities
+            or any(value is not True for value in manifest['capabilities'].values())):
         raise ValueError('SNAPSHOT_RESTORE_UNSUPPORTED')
     for record in records: verified_path(bundle,record)
     data={name:read_jsonl(bundle/name) for name in required}
@@ -176,7 +242,9 @@ def read_review_snapshot(bundle: Path) -> tuple[dict, dict]:
         raise ValueError('POLICY_SNAPSHOT_MISMATCH')
     try:
         items=_validate_store_rows(data['store-items.jsonl'],manifest['role'])
-        _validate_decision_rows(data['decision-records.jsonl'],items)
+        validate_review_history(items,data['decision-records.jsonl'])
+        if snapshot_format(items)['snapshot_schema_version']!=version:
+            raise ValueError('SNAPSHOT_WORKFLOW_FORMAT_MISMATCH')
         validate_item_policy(items,provenance,manifest['role'])
         if any(data[name]!=rows for name,rows in reference_rows(items,data['decision-records.jsonl']).items()):
             raise ValueError('SNAPSHOT_SIDECAR_MISMATCH')
@@ -203,7 +271,7 @@ def validate_snapshot_store(bundle: Path, store: Path) -> None:
         expected=[tuple(row[key] for key in source_keys) for row in data['store-items.jsonl']]
         if sources!=expected: raise ValueError('SNAPSHOT_STORE_SOURCE_MISMATCH')
         items=_validate_store_rows(rows,manifest['role'])
-        _validate_decision_rows(decisions,items)
+        validate_review_history(items,decisions)
         snapshot_decisions=data['decision-records.jsonl']
         if decisions[:len(snapshot_decisions)]!=snapshot_decisions:
             raise ValueError('SNAPSHOT_STORE_HISTORY_MISMATCH')

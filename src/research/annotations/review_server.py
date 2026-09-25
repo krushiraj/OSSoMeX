@@ -7,7 +7,8 @@ import secrets
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from ..data.manifest import read_jsonl, verified_path
-from .review_store import ReviewError, apply_decision, export_reference, get_item, import_items, open_store, queue
+from .review_store import ReviewError, apply_decision, decision_history, export_reference, get_item, import_items, open_store, queue
+from .review_workflow import project_review
 from .aliases import build_alias_groups
 from .snapshots import read_policy_provenance, validate_item_policy, validate_snapshot_store
 
@@ -26,8 +27,9 @@ def authorized_request(headers, port, token, write=False):
     return True
 
 
-def create_server(bundle: Path, store: Path, host='127.0.0.1', port=8765):
+def create_server(bundle: Path, store: Path, host='127.0.0.1', port=8765, ui='selection'):
     check_bind(host)
+    if ui not in ('selection','legacy'): raise ValueError('UI_UNSUPPORTED')
     manifest=json.loads((bundle/'manifest.json').read_bytes())
     if 'snapshot_schema_version' in manifest or any(row['path']=='store-items.jsonl' for row in manifest['files']):
         validate_snapshot_store(bundle,store)
@@ -41,6 +43,12 @@ def create_server(bundle: Path, store: Path, host='127.0.0.1', port=8765):
         finally:c.close()
     token=secrets.token_urlsafe(32)
     assets=Path(__file__).parent/'web'
+    entry='review-v2.html' if ui=='selection' else 'index.html'
+    static={'/':(entry,'text/html; charset=utf-8'),'/review.js':('review.js','text/javascript; charset=utf-8'),
+            '/review.css':('review.css','text/css; charset=utf-8')}
+    for name in ('review-selection.js','review-draft.js','review-view.js','review-session.js','review-v2.js'):
+        static['/'+name]=(name,'text/javascript; charset=utf-8')
+    static['/review-v2.css']=('review-v2.css','text/css; charset=utf-8')
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self,format,*args): pass
@@ -58,19 +66,23 @@ def create_server(bundle: Path, store: Path, host='127.0.0.1', port=8765):
             if not authorized_request(self.headers,self.server.server_port,token):
                 return self.respond(403,{'error':'HOST_OR_ORIGIN_REJECTED'})
             parsed=urlsplit(self.path); path=parsed.path
-            static={'/':('index.html','text/html; charset=utf-8'),'/review.js':('review.js','text/javascript; charset=utf-8'),
-                    '/review.css':('review.css','text/css; charset=utf-8')}
             if path in static:
-                name,mime=static[path];return self.respond(200,(assets/name).read_bytes(),mime)
+                name,mime=static[path]
+                try: data=(assets/name).read_bytes()
+                except FileNotFoundError: return self.respond(503,{'error':'UI_NOT_READY'})
+                return self.respond(200,data,mime)
             if path=='/api/session': return self.respond(200,{'csrf_token':token,'role':manifest['role'],
-                                                            'capabilities':{'aliases':True},'alias_schema_version':'1.0'})
+                                                            'capabilities':{'aliases':True,'review_workflow':True},
+                                                            'alias_schema_version':'1.0',
+                                                            'review_workflow_schema_version':'1.0'})
             c=open_store(store)
             try:
                 if path=='/api/queue':
-                    filters={k:v[0] for k,v in parse_qs(parsed.query).items() if k in ('status','source','reason','field')}
+                    filters={k:v[0] for k,v in parse_qs(parsed.query).items() if k in ('status','source','reason','field','workflow_status')}
                     return self.respond(200,queue(c,filters))
                 if path.startswith('/api/tasks/'):
                     item=get_item(c,unquote(path.removeprefix('/api/tasks/')))
+                    item['review_summary']=project_review(item,decision_history(c,item['task']['task_id']))
                     item['alias_groups']=build_alias_groups(item['annotation']['occurrences'],
                                                           item['annotation'].get('alias_annotations'))
                     # Do not expose scores in the reviewer response.
@@ -78,6 +90,7 @@ def create_server(bundle: Path, store: Path, host='127.0.0.1', port=8765):
                     return self.respond(200,item)
                 self.respond(404,{'error':'NOT_FOUND'})
             except ReviewError as exc:self.respond(404,{'error':str(exc)})
+            except ValueError as exc:self.respond(400,{'error':str(exc)})
             finally:c.close()
 
         def do_POST(self):
