@@ -267,8 +267,8 @@ export const applyDraftAction = async (draft, action) => {
   } else if (action.type === 'identify_name') identify(next, action.span, action);
   else if (action.type === 'record_note') addOperation(next, 'record_note', {}, action, 'note');
   else if (['remove_name', 'change_name_span'].includes(action.type)
-      && next.blindFindings.some(row => row.mentionId === action.mentionId)
-      && (!next.revealed || next.reconciliation.some(row => row.mentionId === action.mentionId))) {
+      && ((!next.revealed && next.blindFindings.some(row => row.mentionId === action.mentionId))
+        || next.reconciliation.some(row => row.mentionId === action.mentionId))) {
     next.blindFindings = next.blindFindings.filter(row => row.mentionId !== action.mentionId);
     next.reconciliation = next.reconciliation.filter(row => row.mentionId !== action.mentionId);
     if (!next.revealed) next.view.annotation.occurrences = next.view.annotation.occurrences.filter(row => row.mention_id !== action.mentionId);

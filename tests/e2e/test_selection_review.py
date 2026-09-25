@@ -327,6 +327,51 @@ def test_blind_reconciliation_is_correctable_and_undoable(page, selection_app):
 
 
 @pytest.mark.parametrize('selection_app', ['blind'], indirect=True)
+@pytest.mark.parametrize('resolution', ['correct', 'discard'])
+def test_repeated_blind_overlap_remains_actionable_through_undo_redo(page, selection_app, resolution):
+    base, item = load(page, selection_app)
+    span = item['annotation']['occurrences'][0]['name_span']
+    result = page.evaluate('''async ({span,resolution}) => {
+      await act({type:'identify_name',span:{...span,end:span.end-1}});
+      await act({type:'reveal'});
+      const first=structuredClone(draft);
+      await act({type:'change_name_span',mentionId:draft.reconciliation[0].mentionId,
+        span:{...span,end:span.end-2}});
+      const second=structuredClone(draft);
+      draft=modules.undoDraft(draft);
+      const firstRestored=structuredClone(draft);
+      draft=modules.redoDraft(draft);
+      const secondRestored=structuredClone(draft);
+      const mentionId=draft.reconciliation[0].mentionId;
+      await act(resolution==='correct' ? {type:'change_name_span',mentionId,span}
+        : {type:'remove_name',mentionId});
+      const resolved=structuredClone(draft);
+      draft=modules.undoDraft(draft);
+      const unresolvedAgain=structuredClone(draft);
+      draft=modules.redoDraft(draft);
+      return {first,second,firstRestored,secondRestored,resolved,unresolvedAgain,
+        final:structuredClone(draft),batch:modules.buildBatch(draft,
+          {completion:'save',reviewer:'Krushi',decisionId:'repeated-overlap'})};
+    }''', dict(span=span, resolution=resolution))
+    assert result['second']['reconciliation'][0]['span']['end'] == span['end'] - 2
+    assert result['firstRestored']['reconciliation'] == result['first']['reconciliation']
+    assert result['secondRestored']['reconciliation'] == result['second']['reconciliation']
+    assert result['unresolvedAgain']['reconciliation'] == result['second']['reconciliation']
+    assert result['final']['reconciliation'] == result['resolved']['reconciliation'] == []
+    identities = [row['mention_id'] for row in item['annotation']['occurrences']]
+    for snapshot in ('first', 'second', 'firstRestored', 'secondRestored', 'resolved', 'unresolvedAgain', 'final'):
+        assert [row['mention_id'] for row in result[snapshot]['view']['annotation']['occurrences']] == identities
+    if resolution == 'correct':
+        assert len(result['final']['operations']) == 1
+        assert result['final']['operations'][0]['action'] == 'accept_fields'
+        assert result['final']['operations'][0]['fields'] == ['software']
+        save(page, base)
+    else:
+        assert result['final']['operations'] == [] and not result['final']['dirty']
+        assert result['batch'] is None
+
+
+@pytest.mark.parametrize('selection_app', ['blind'], indirect=True)
 def test_activate_and_blind_note_no_label_leaks(page, selection_app):
     base, item = load(page, selection_app)
     hidden_id = item['annotation']['occurrences'][0]['mention_id']
