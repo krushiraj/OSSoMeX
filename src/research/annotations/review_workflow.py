@@ -5,7 +5,7 @@ from __future__ import annotations
 from copy import deepcopy
 import re
 
-from ..contracts import FIELDS, INTENT_BITS
+from ..contracts import FIELDS, INTENT_BITS, occurrence_id
 from ..data.manifest import digest, json_bytes
 from .aliases import alias_relation_id, build_alias_groups
 
@@ -123,6 +123,19 @@ def _operation(row: dict, operation_id: str) -> dict:
     operations = payload['value'].get('operations')
     if not isinstance(operations, list):
         raise ValueError('WORKFLOW_REVIEW_SCOPE_MISMATCH')
+    generated = row['result'].get('approval_operations', [])
+    if not isinstance(generated, list):
+        raise ValueError('WORKFLOW_REVIEW_SCOPE_MISMATCH')
+    if generated and (payload.get('actor_kind') != 'human'
+                      or payload['value'].get('completion') != 'approve'
+                      or payload['value'].get('proposals_revealed') is not True
+                      or any(not isinstance(op, dict) or op.get('action') not in
+                             ('accept_fields', 'accept_alias', 'reject_alias') for op in generated)):
+        raise ValueError('WORKFLOW_REVIEW_SCOPE_MISMATCH')
+    operations = operations + generated
+    ids = [op.get('operation_id') for op in operations if isinstance(op, dict)]
+    if any(not isinstance(ident, str) for ident in ids) or len(set(ids)) != len(ids):
+        raise ValueError('WORKFLOW_REVIEW_SCOPE_MISMATCH')
     matches = [operation for operation in operations if isinstance(operation, dict)
                and operation.get('operation_id') == operation_id]
     if len(matches) != 1:
@@ -152,10 +165,14 @@ def _validate_field_stamp(item: dict, records: dict[str, dict], mid: str,
     target = operation.get('target_name_span')
     value = operation.get('value')
     if target != occurrence['name_span'] and not (
-            target is None and isinstance(value, dict) and value.get('mention_id') == mid):
+            isinstance(value, dict) and value.get('name_span') == occurrence['name_span']
+            and value.get('mention_id', mid) == mid):
         raise ValueError('WORKFLOW_REVIEW_SCOPE_MISMATCH')
     if operation['action'] == 'upsert_occurrence' and isinstance(value, dict):
         try:
+            if 'mention_id' not in value:
+                value = {**value, 'mention_id': occurrence_id(item['task']['document_id'],
+                    item['task']['text_revision'], value['name_span']['start'], value['name_span']['end'])}
             expected_hash = field_fingerprint(item['task'], value, field)
         except (KeyError, TypeError, ValueError) as exc:
             raise ValueError('WORKFLOW_REVIEW_HASH_MISMATCH') from exc

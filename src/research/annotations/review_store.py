@@ -6,10 +6,12 @@ import json
 from pathlib import Path
 import sqlite3
 
-from ..contracts import FIELDS, INTENT_BITS
 from ..data.manifest import digest, json_bytes, write_jsonl, write_once
 from .validation import validate_task_occurrence
-from .alias_decisions import ALIAS_ACTIONS, apply_alias_decision, assert_alias_members_unchanged, validate_annotation_aliases
+from .alias_decisions import ALIAS_ACTIONS, validate_annotation_aliases
+from .review_batches import apply_batch, result_metadata
+from .review_mutations import reduce_mutation
+from .review_workflow import validate_workflow
 
 
 class ReviewError(ValueError):
@@ -102,7 +104,15 @@ def queue(c, filters=None) -> dict:
             'quality':'provisional'}
 
 
+def decision_history(c, task_id: str) -> list[dict]:
+    return [{'payload': json.loads(row['payload']), 'result': json.loads(row['result']),
+             'recorded_at': row['recorded_at']} for row in c.execute(
+        'SELECT payload,result,recorded_at FROM decisions WHERE task_id=? ORDER BY rowid', (task_id,))]
+
+
 def apply_decision(c, decision: dict) -> dict:
+    if not isinstance(decision, dict):
+        raise ReviewError('INVALID_DECISION')
     payload=json.dumps(decision,sort_keys=True,ensure_ascii=False)
     if any(not isinstance(decision.get(k),str) or not decision[k].strip() for k in ('decision_id','task_id','reviewer','reason')):
         raise ReviewError('IDENTITY_AND_REASON_REQUIRED')
@@ -118,78 +128,29 @@ def apply_decision(c, decision: dict) -> dict:
             raise ReviewError('SOURCE_REVISION_MISMATCH')
         if type(decision.get('base_annotation_revision')) is not int or decision['base_annotation_revision']!=item['annotation_revision']:
             raise ReviewError('STALE_REVISION')
-        action=decision.get('action'); value=decision.get('value'); target=decision.get('target_name_span')
-        occurrences=annotation['occurrences']
-        existing=next((o for o in occurrences if o['name_span']==target),None)
+        action=decision.get('action')
+        history=decision_history(c,task['task_id'])
+        validate_workflow(item,history)
         now=datetime.now(timezone.utc).isoformat()
         provenance={'status':'human_reviewed','reviewer':decision['reviewer'],'decision_id':decision['decision_id'],
                     'recorded_at_utc':now,'reasons':[]}
         status=item['status']
-        if action in ALIAS_ACTIONS:
-            annotation=apply_alias_decision(task,annotation,decision,provenance)
-            occurrences=annotation['occurrences']
-            if status!='reviewed': status='in_progress'
-        elif action=='upsert_occurrence':
-            try: new=validate_task_occurrence(task,value)
-            except (ValueError,KeyError,TypeError) as exc: raise ReviewError('INVALID_OCCURRENCE:'+str(exc)) from exc
-            if target is not None and existing is None: raise ReviewError('UNKNOWN_OCCURRENCE')
-            if any(o is not existing and o['name_span']==new['name_span'] for o in occurrences):
-                raise ReviewError('DUPLICATE_OCCURRENCE')
-            if existing:
-                assert_alias_members_unchanged(annotation,existing['mention_id'],new['mention_id'])
-                occurrences.remove(existing)
-            new['review']=provenance;occurrences.append(new)
-            status='in_progress'
-        elif action=='accept_passage':
-            annotation['human_passage_review']={'fields':['software'],'reviewer':decision['reviewer'],
-                                                 'decision_id':decision['decision_id'],'recorded_at_utc':now}
-            # Human name coverage supplements, rather than replaces, agent field coverage.
-            regions=annotation.get('covered_regions',[])+[
-                {**r,'fields':dict.fromkeys(FIELDS,False)} for r in annotation.get('unresolved_regions',[])]
-            for region in regions:
-                region['fields']['software']=True
-                region['human_reviewed_fields']=sorted(set(region.get('human_reviewed_fields',[]))|{'software'})
-                region['status']='complete' if all(region['fields'].values()) else 'partial'
-            annotation['covered_regions']=sorted(regions,key=lambda r:r['start'])
-            annotation['unresolved_regions']=[]
-            status='reviewed'
-        elif action in ('accept_occurrence','remove_occurrence','mark_field_unresolved','link_version','unlink_version'):
-            if existing is None: raise ReviewError('UNKNOWN_OCCURRENCE')
-            if action=='remove_occurrence':
-                assert_alias_members_unchanged(annotation,existing['mention_id'],None)
-                occurrences.remove(existing)
-            else:
-                existing['review']=provenance
-                if action=='mark_field_unresolved':
-                    field=decision.get('field')
-                    if field=='sentiment': existing['sentiment']=None;existing['known']['sentiment']=False;existing['evidence']['sentiment']=[]
-                    elif field=='versions': existing['version_status']='ambiguous';existing['known']['versions']=False
-                    elif field=='intents':
-                        existing['intents']=None;existing['evidence']['intents']=[]
-                        for key in INTENT_BITS: existing['known'][key]=False
-                    else: raise ReviewError('UNKNOWN_FIELD')
-                    existing['review']['status']='unresolved';existing['review']['reasons']=['unresolved_field']
-                elif action=='link_version':
-                    existing['version_links'].append(value);existing['version_status']='explicit'
-                elif action=='unlink_version':
-                    if value not in existing['version_links']: raise ReviewError('UNKNOWN_VERSION_LINK')
-                    existing['version_links'].remove(value)
-                    if not existing['version_links']: existing['version_status']='absent' if existing['known']['versions'] else 'unannotated'
-                validate_task_occurrence(task,existing)
-            status='in_progress'
-        else: raise ReviewError('UNKNOWN_ACTION')
-        if action not in ALIAS_ACTIONS:
-            annotation['occurrences']=sorted(occurrences,key=lambda o:o['name_span']['start'])
-            covered=annotation.get('covered_regions',[])
-            annotation['status']='complete' if covered and not annotation.get('unresolved_regions') and all(
-                r['status']=='complete' and all(r['fields'].values()) for r in covered) else 'partial'
-            annotation['complete_negative_regions']=[deepcopy(r) for r in covered
-                if r['status']=='complete' and all(r['fields'].values())
-                and not any(r['start'] < o['name_span']['end'] and o['name_span']['start'] < r['end'] for o in occurrences)]
+        if action=='apply_review_batch':
+            annotation,status,operation_results=apply_batch(item,decision,history,now)
+        else:
+            if decision.get('actor_kind','human')!='human': raise ReviewError('ACTOR_FORBIDDEN')
+            annotation=reduce_mutation(task,annotation,decision,provenance)
+            if action=='accept_passage': status='reviewed'
+            elif action not in ALIAS_ACTIONS or status!='reviewed': status='in_progress'
+            if item['annotation'].get('review_workflow',{}).get('approval') and action!='accept_passage':
+                status='in_progress'
         validate_annotation_aliases(task,annotation)
         annotation['annotation_revision']=item['annotation_revision']+1
         result={'decision_id':decision['decision_id'],'task_id':task['task_id'],
                 'annotation_revision':annotation['annotation_revision'],'recorded_at_utc':now}
+        if action=='apply_review_batch': result.update(result_metadata(annotation,operation_results))
+        pending={'payload':decision,'result':result,'recorded_at':now}
+        validate_workflow({**item,'annotation':annotation,'annotation_revision':annotation['annotation_revision']},history+[pending])
         c.execute('UPDATE items SET annotation=?,revision=?,status=? WHERE task_id=?',
                   (json.dumps(annotation),annotation['annotation_revision'],status,task['task_id']))
         c.execute('INSERT INTO decisions VALUES (?,?,?,?,?)',(decision['decision_id'],task['task_id'],payload,json.dumps(result),now))
