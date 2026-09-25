@@ -169,6 +169,9 @@ def _validate_field_stamp(item: dict, records: dict[str, dict], mid: str,
         stored = scoped.get(field) if isinstance(scoped, dict) else None
         if stored != stamp['value_hash']:
             raise ValueError('WORKFLOW_REVIEW_HASH_MISMATCH')
+    if (stamp['state'] == 'confirmed' and not occurrence['known'][field]
+            and stamp['value_hash'] == field_fingerprint(item['task'], occurrence, field)):
+        raise ValueError('WORKFLOW_CONFIRMED_UNKNOWN')
 
 
 def _validate_source_issue(task: dict, issue: dict, records: dict[str, dict]) -> None:

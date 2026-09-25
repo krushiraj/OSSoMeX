@@ -248,6 +248,26 @@ def test_confirmed_stamp_cannot_confirm_an_unknown_mask():
             'decision_id': 'batch-1', 'operation_id': 'op-1', 'reviewer': 'Krushi',
             'recorded_at_utc': recorded}}}, 'source_issues': [], 'approval': None}
     history = [{'payload': payload, 'result': {'decision_id': 'batch-1'}, 'recorded_at': recorded}]
+    with pytest.raises(ValueError, match='WORKFLOW_CONFIRMED_UNKNOWN'):
+        validate_workflow(item, history)
+
+
+def test_stale_known_confirmation_survives_validation_but_no_longer_confirms():
+    item = workflow_item()
+    occurrence = item['annotation']['occurrences'][0]
+    operation = field_operation(occurrence, ['sentiment'])
+    payload = batch(item, [operation])
+    recorded = '2026-09-25T00:00:00+00:00'
+    old_hash = field_fingerprint(item['task'], occurrence, 'sentiment')
+    item['annotation']['review_workflow'] = {'schema_version': '1.0',
+        'field_reviews': {occurrence['mention_id']: {'sentiment': {
+            'state': 'confirmed', 'value_hash': old_hash,
+            'decision_id': 'batch-1', 'operation_id': 'op-1', 'reviewer': 'Krushi',
+            'recorded_at_utc': recorded}}}, 'source_issues': [], 'approval': None}
+    history = [{'payload': payload, 'result': {'decision_id': 'batch-1'}, 'recorded_at': recorded}]
+    occurrence['known']['sentiment'] = False
+    occurrence['sentiment'] = None
+    validate_workflow(item, history)
     result = project_review(item, history)
     assert result['fields'][occurrence['mention_id']]['sentiment']['state'] == 'missing'
     assert not result['can_approve']
