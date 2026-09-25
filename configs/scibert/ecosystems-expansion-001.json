@@ -1,0 +1,18 @@
+{
+  "projects": [
+    {"url": "https://papers.ecosyste.ms/api/v1/projects/pypi/cellpose"},
+    {"url": "https://papers.ecosyste.ms/api/v1/projects/pypi/snakemake"},
+    {"url": "https://papers.ecosyste.ms/api/v1/projects/pypi/networkx"}
+  ],
+  "max_papers": 3,
+  "max_candidates_per_project": 10,
+  "max_sentences_per_paper": 3,
+  "seed": 42,
+  "annotation_policy": "annotations/scibert-v2/policy-2.1-d17.md",
+  "exclusion_documents": [
+    "data/scibert-v2/corpus-001/documents.jsonl",
+    "inputs/sofair/sofair_docs.jsonl",
+    "inputs/somesci/somesci_docs.jsonl",
+    "data/scibert-v2/ecosystems-pilot-002/bundle/documents.jsonl"
+  ]
+}
