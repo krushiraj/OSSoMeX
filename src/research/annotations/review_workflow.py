@@ -362,8 +362,22 @@ def _relation_confirmed(relation: dict, records: dict[str, dict]) -> bool:
             if not isinstance(members, list) or any(not isinstance(mid, str) for mid in members):
                 return False
             expected_id = alias_relation_id(relation['document_id'], relation['text_revision'], members)
-            if expected_id != relation['relation_id'] or target not in (None, relation['relation_id']):
+            if expected_id != relation['relation_id']:
                 return False
+            if target not in (None, relation['relation_id']):
+                results = row['result'].get('operation_results')
+                if not isinstance(results, list):
+                    return False
+                matches = [result for result in results if isinstance(result, dict)
+                           and result.get('operation_id') == operation['operation_id']
+                           and result.get('action') == 'upsert_alias']
+                if len(matches) != 1:
+                    return False
+                before, after = matches[0].get('before'), matches[0].get('after')
+                if (not isinstance(before, dict) or before.get('relation_id') != target
+                        or not isinstance(after, dict) or after.get('relation_id') != expected_id
+                        or any(after.get(key) != relation.get(key) for key in fields)):
+                    return False
             return relation.get('member_mention_ids') == sorted(members) and all(
                 relation.get(key) == value[key] for key in fields[1:])
     else:

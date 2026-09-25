@@ -345,3 +345,44 @@ def test_source_issue_rejects_caller_operation_provenance(saved):
     with pytest.raises(store.ReviewError, match='PROVENANCE'):
         store.apply_decision(c, batch(item, [{'operation_id': 'issue', 'action': 'record_source_issue',
                                              'value': issue, 'reason_code': 'broken_passage'}]))
+
+
+def test_alias_endpoint_replacement_confirms_only_exact_saved_relation(tmp_path):
+    from test_aliases import _three_names
+    task, occurrences, pair = _three_names()
+    task.update(split='demo', source='synthetic-contract-fixture', requested_fields=['aliases'])
+    occurrences[2].update(intents=['mentioned'], sentiment='negative',
+                          evidence={'intents': [], 'sentiment': [deepcopy(task['context_span'])]})
+    previous = pair(0, 1, preferred=0)
+    replacement = pair(0, 2, preferred=2)
+    item = {'task': task, 'annotation_revision': 1, 'status': 'unreviewed',
+            'annotation': {'occurrences': occurrences, 'annotation_revision': 1,
+                'alias_annotations': {'schema_version': '1.0', 'relations': [previous]}}}
+    c = store.open_store(tmp_path / 'replacement.sqlite')
+    try:
+        store.import_items(c, [item], 'demo')
+        labels = deepcopy(current(c, item)['annotation']['occurrences'])
+        operation = {'operation_id': 'replace', 'action': 'upsert_alias',
+                     'target_relation_id': previous['relation_id'], 'value': replacement,
+                     'reason_code': 'link_alias'}
+        store.apply_decision(c, batch(item, [operation]))
+        saved_item = current(c, item)
+        history = store.decision_history(c, task['task_id'])
+        rid = replacement['relation_id']
+        assert summary(c, item)['relations'] == {rid: {'state': 'confirmed'}}
+        assert saved_item['annotation']['occurrences'] == labels
+        for patch in ({'preferred_mention_id': occurrences[0]['mention_id']},
+                      {'decision': 'not_alias', 'preferred_mention_id': None},
+                      {'evidence_spans': []}):
+            changed = deepcopy(saved_item)
+            changed['annotation']['alias_annotations']['relations'][0].update(patch)
+            assert project_review(changed, history)['relations'][rid]['state'] == 'proposed'
+        stale = deepcopy(saved_item)
+        stale['annotation']['alias_annotations']['relations'][0] = {
+            **previous, 'review': saved_item['annotation']['alias_annotations']['relations'][0]['review']}
+        assert project_review(stale, history)['relations'][previous['relation_id']]['state'] == 'proposed'
+        forged = deepcopy(history)
+        forged[0]['result']['operation_results'][0]['before']['relation_id'] = 'different-target'
+        assert project_review(saved_item, forged)['relations'][rid]['state'] == 'proposed'
+    finally:
+        c.close()
