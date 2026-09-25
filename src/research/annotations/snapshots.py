@@ -30,12 +30,13 @@ def snapshot_format(items: list[dict]) -> dict:
 
 def validate_review_history(items: list[dict], decision_records: list[dict]) -> None:
     _validate_decision_rows(decision_records,items)
+    tasks={item['task']['task_id']:item['task'] for item in items}
     histories={item['task']['task_id']:[] for item in items}
     for row in decision_records:
         if row['task_id'] not in histories: raise ValueError('SNAPSHOT_DECISION_REFERENCE')
         payload=json.loads(row['payload']); result=json.loads(row['result'])
         if payload.get('action')=='apply_review_batch':
-            _validate_batch_record(payload,result)
+            _validate_batch_record(payload,result,tasks[row['task_id']])
         histories[row['task_id']].append({'payload':payload,'result':result,'recorded_at':row['recorded_at']})
     for item in items:
         history=histories[item['task']['task_id']]
@@ -45,8 +46,8 @@ def validate_review_history(items: list[dict], decision_records: list[dict]) -> 
         validate_workflow(item,history)
 
 
-def _validate_batch_record(payload: dict, result: dict) -> None:
-    from .review_batches import _validate_operation
+def _validate_batch_record(payload: dict, result: dict, task: dict) -> None:
+    from .review_batches import validate_operation
     value=payload.get('value'); actor=payload.get('actor_kind')
     if (not isinstance(value,dict) or set(value)!={'schema_version','completion','proposals_revealed','operations'}
             or value['schema_version']!='1.0' or value['completion'] not in ('save','approve')
@@ -57,7 +58,7 @@ def _validate_batch_record(payload: dict, result: dict) -> None:
     if not isinstance(generated,list) or not isinstance(outcomes,list) or not isinstance(result.get('field_hashes'),dict):
         raise ValueError('SNAPSHOT_BATCH_RESULT_INVALID')
     operations=value['operations']+generated
-    for operation in operations: _validate_operation(operation)
+    for operation in operations: validate_operation(operation,task)
     if (len({op['operation_id'] for op in operations})!=len(operations)
             or len(outcomes)!=len(operations)
             or any(not isinstance(outcome,dict) or outcome.get('operation')!=operation

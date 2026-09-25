@@ -5,6 +5,7 @@ from copy import deepcopy
 from ..contracts import FIELDS, INTENT_BITS
 from .alias_decisions import ALIAS_ACTIONS
 from .review_mutations import reduce_mutation
+from .validation import validate_task_occurrence
 from .review_workflow import content_fingerprint, field_fingerprint, project_review, required_fields, validate_workflow, value_hash
 
 
@@ -37,7 +38,16 @@ def _reject_provenance(value, operation=False):
             _reject_provenance(child)
 
 
-def _validate_operation(operation):
+def _valid_span(value):
+    return (isinstance(value, dict) and type(value.get('start')) is int
+            and type(value.get('end')) is int and 0 <= value['start'] < value['end'])
+
+
+def _nonblank(value):
+    return isinstance(value, str) and bool(value.strip())
+
+
+def validate_operation(operation, task):
     if not isinstance(operation, dict) or not isinstance(operation.get('operation_id'), str) or not operation['operation_id'].strip():
         raise ValueError('BATCH_OPERATION_INVALID')
     _reject_provenance(operation, operation=True)
@@ -57,6 +67,38 @@ def _validate_operation(operation):
         fields = operation.get('fields')
         if not isinstance(fields, list) or not fields or any(not isinstance(f, str) or f not in FIELDS for f in fields) or len(set(fields)) != len(fields):
             raise ValueError('BATCH_FIELDS_INVALID')
+    if action in ('upsert_occurrence', 'accept_fields', 'remove_occurrence'):
+        target = operation.get('target_name_span')
+        if not (action == 'upsert_occurrence' and target is None) and not _valid_span(target):
+            raise ValueError('BATCH_TARGET_INVALID')
+    if action in ALIAS_ACTIONS:
+        target = operation.get('target_relation_id')
+        if not (action == 'upsert_alias' and target is None) and not _nonblank(target):
+            raise ValueError('BATCH_TARGET_INVALID')
+    value = operation.get('value')
+    if action == 'upsert_occurrence':
+        try:
+            validate_task_occurrence(task, value)
+        except (ValueError, KeyError, TypeError, AttributeError) as exc:
+            raise ValueError('INVALID_OCCURRENCE:' + str(exc)) from exc
+    elif action == 'upsert_alias':
+        if not isinstance(value, dict):
+            raise ValueError('INVALID_ALIAS_RECORD')
+        members = value.get('member_mention_ids')
+        if (not isinstance(members, list) or len(members) != 2 or any(not _nonblank(mid) for mid in members)
+                or members[0] == members[1] or value.get('relation_type') not in ('abbreviation', 'explicit_alternative_name')
+                or value.get('decision') not in ('alias', 'not_alias', 'unresolved')
+                or 'preferred_mention_id' not in value
+                or value['preferred_mention_id'] is not None and not _nonblank(value['preferred_mention_id'])
+                or not isinstance(value.get('evidence_spans'), list) or not value['evidence_spans']
+                or any(not _valid_span(span) for span in value['evidence_spans'])):
+            raise ValueError('INVALID_ALIAS_RECORD')
+    elif action == 'record_source_issue':
+        if (not isinstance(value, dict) or any(not _nonblank(value.get(key)) for key in
+                ('issue_id', 'message', 'task_id', 'text_revision'))
+                or value.get('code') not in ('broken_passage', 'boundary_fragment')
+                or not _valid_span(value.get('span'))):
+            raise ValueError('WORKFLOW_SOURCE_ISSUE_INVALID')
 
 
 def _scope_values(occurrence, fields):
@@ -117,7 +159,7 @@ def apply_batch(item: dict, decision: dict, history: list[dict], recorded_at: st
     if not isinstance(operations, list) or len(operations) > 200:
         raise ValueError('BATCH_OPERATIONS_INVALID')
     for operation in operations:
-        _validate_operation(operation)
+        validate_operation(operation, item['task'])
     ids = [op['operation_id'] for op in operations]
     if len(ids) != len(set(ids)):
         raise ValueError('BATCH_DUPLICATE_OPERATION_ID')
@@ -216,6 +258,7 @@ def apply_batch(item: dict, decision: dict, history: list[dict], recorded_at: st
                 'action': 'accept_alias' if relation['decision'] == 'alias' else 'reject_alias',
                 'target_relation_id': relation['relation_id'], 'reason_code': 'accept_proposal'})
         for operation in generated:
+            validate_operation(operation, task)
             if operation['operation_id'] in ids:
                 raise ValueError('BATCH_DUPLICATE_OPERATION_ID')
             apply(operation, generated=True)

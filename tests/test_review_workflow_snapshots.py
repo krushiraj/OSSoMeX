@@ -1,4 +1,5 @@
 import json
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
@@ -199,5 +200,108 @@ def test_import_rejects_explicit_invalid_workflow_atomically(tmp_path, workflow)
         with pytest.raises(ValueError, match='WORKFLOW_SCHEMA_UNSUPPORTED'):
             store.import_items(c, [item], 'demo')
         assert raw_rows(c) == {'items': [], 'decisions': [], 'metadata': []}
+    finally:
+        c.close()
+
+
+MALFORMED_ACTIONS = [
+    ('upsert_occurrence', 'value', 'missing'),
+    ('upsert_occurrence', 'value', None),
+    ('upsert_occurrence', 'value', []),
+    ('upsert_occurrence', 'value', {}),
+    ('upsert_occurrence', 'target_name_span', []),
+    ('upsert_occurrence', 'target_name_span', {'start': True, 'end': 2}),
+    ('accept_fields', 'target_name_span', 'missing'),
+    ('accept_fields', 'target_name_span', None),
+    ('accept_fields', 'target_name_span', []),
+    ('remove_occurrence', 'target_name_span', 'missing'),
+    ('remove_occurrence', 'target_name_span', {'start': 4, 'end': 4}),
+    ('upsert_alias', 'value', 'missing'),
+    ('upsert_alias', 'value', None),
+    ('upsert_alias', 'value', []),
+    ('upsert_alias', 'value', {}),
+    ('upsert_alias', 'target_relation_id', []),
+    ('accept_alias', 'target_relation_id', 'missing'),
+    ('accept_alias', 'target_relation_id', None),
+    ('reject_alias', 'target_relation_id', 1),
+    ('unresolve_alias', 'target_relation_id', []),
+    ('remove_alias', 'target_relation_id', ''),
+    ('record_source_issue', 'value', 'missing'),
+    ('record_source_issue', 'value', None),
+    ('record_source_issue', 'value', []),
+    ('record_source_issue', 'value', {}),
+    ('record_note', 'note', 'missing'),
+    ('record_note', 'note', []),
+]
+
+
+def malformed_operation(item, action, key, bad):
+    operation = {'operation_id': 'op', 'action': action, 'reason_code': 'other', 'note': 'Review.'}
+    if action in ('upsert_occurrence', 'accept_fields', 'remove_occurrence'):
+        operation['target_name_span'] = item['annotation']['occurrences'][0]['name_span']
+        operation['fields'] = ['software']
+    if action == 'upsert_occurrence': operation['value'] = item['annotation']['occurrences'][0]
+    if action.endswith('_alias'):
+        relation = item['annotation']['alias_annotations']['relations'][0]
+        operation['target_relation_id'] = relation['relation_id']
+        if action == 'upsert_alias': operation['value'] = relation
+    if bad == 'missing': operation.pop(key, None)
+    else: operation[key] = bad
+    return deepcopy(operation)
+
+
+@pytest.mark.parametrize('action,key,bad', MALFORMED_ACTIONS)
+@pytest.mark.parametrize('boundary', ['live', 'export', 'restore'])
+def test_unreferenced_batch_operation_shapes_rejected_before_writes(tmp_path, action, key, bad, boundary):
+    item = workflow_item(); c = store.open_store(tmp_path / 'source.sqlite')
+    try:
+        store.import_items(c, [item], 'demo')
+        operation = malformed_operation(item, action, key, bad)
+        if boundary == 'live':
+            before = raw_rows(c)
+            with pytest.raises(ValueError): store.apply_decision(c, batch(item, [operation]))
+            assert raw_rows(c) == before
+            return
+        request = batch(item, [{'operation_id': 'op', 'action': 'record_note', 'reason_code': 'note', 'note': 'Review.'}])
+        result = store.apply_decision(c, request)
+        bundle = tmp_path / 'snapshot'; manifest = store.export_reference(c, bundle)
+        request['value']['operations'] = [operation]
+        result['operation_results'][0].update(operation=operation, action=action)
+        if boundary == 'export':
+            c.execute('DROP TRIGGER decisions_no_update')
+            c.execute('UPDATE decisions SET payload=?,result=?', (json.dumps(request), json.dumps(result)))
+            with pytest.raises(ValueError): store.export_reference(c, tmp_path / 'bad-export')
+            assert not (tmp_path / 'bad-export').exists()
+        else:
+            records = read_jsonl(bundle / 'decision-records.jsonl')
+            records[0].update(payload=json.dumps(request), result=json.dumps(result))
+            rewrite_sidecar(bundle, 'decision-records.jsonl', records, manifest)
+            rewrite_sidecar(bundle, 'decisions.jsonl', [{**request, 'recorded_at_utc': result['recorded_at_utc']}], manifest)
+            (bundle / 'manifest.json').write_bytes(json_bytes(manifest))
+            with pytest.raises(ValueError): restore_review_snapshot(bundle, tmp_path / 'bad.sqlite')
+            assert not (tmp_path / 'bad.sqlite').exists()
+    finally:
+        c.close()
+
+
+@pytest.mark.parametrize('action,key,bad', [
+    ('accept_fields', 'target_name_span', None),
+    ('accept_alias', 'target_relation_id', None),
+    ('reject_alias', 'target_relation_id', []),
+])
+def test_generated_acceptance_requires_targets_even_without_current_stamps(tmp_path, action, key, bad):
+    item = workflow_item(); c = store.open_store(tmp_path / 'source.sqlite')
+    try:
+        store.import_items(c, [item], 'demo')
+        request = batch(item, [{'operation_id': 'op', 'action': 'record_note', 'reason_code': 'note', 'note': 'Review.'}])
+        result = store.apply_decision(c, request)
+        operation = malformed_operation(item, action, key, bad)
+        request['value'].update(completion='approve', operations=[])
+        result['approval_operations'] = [operation]
+        result['operation_results'][0].update(operation=operation, action=action, generated=True)
+        c.execute('DROP TRIGGER decisions_no_update')
+        c.execute('UPDATE decisions SET payload=?,result=?', (json.dumps(request), json.dumps(result)))
+        with pytest.raises(ValueError): store.export_reference(c, tmp_path / 'bad-export')
+        assert not (tmp_path / 'bad-export').exists()
     finally:
         c.close()
