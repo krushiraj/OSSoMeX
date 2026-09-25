@@ -68,6 +68,11 @@ small,.muted { color:var(--slate); }
 .advanced input { width:115px; }
 #review-message { color:#991b1b; padding:0 24px; background:var(--paper); white-space:pre-wrap; overflow-wrap:anywhere; }
 #review-message:not(:empty) { padding:12px 24px; }
+#session-status { color:var(--slate); background:var(--paper); font-size:13px; padding:6px 24px; }
+#session-status:empty,#session-choices:empty { display:none; }
+#session-choices { background:#fff8e8; border-bottom:1px solid var(--line); padding:12px 24px; display:flex; flex-wrap:wrap; gap:8px; }
+#session-choices p,#session-choices details { flex-basis:100%; }
+#session-choices pre { max-height:280px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; }
 #review-footer { position:sticky; bottom:0; z-index:10; padding:12px 24px; background:var(--paper); border-top:1px solid var(--line); display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; }
 .primary { background:var(--focus); color:white; border-color:var(--focus); }
 .footer-note { font-size:13px; color:var(--slate); flex:1 1 180px; }

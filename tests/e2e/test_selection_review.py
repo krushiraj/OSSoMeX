@@ -1,4 +1,6 @@
 import threading
+import json
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -17,17 +19,425 @@ from playwright.sync_api import expect
 def selection_app(tmp_path, request):
     bundle = tmp_path / 'bundle'
     bundle.mkdir()
-    write_jsonl(bundle / 'items.jsonl', [selection_item(getattr(request, 'param', None))])
+    options = getattr(request, 'param', None)
+    integrated = isinstance(options, dict) or options == 'complete_proposal_ui'
+    variants = options.get('variants', [None]) if isinstance(options, dict) else [options]
+    items = [selection_item(variant) for variant in variants]
+    for item in items:
+        if integrated:
+            item['task']['whole_passage_audit'] = True
+    write_jsonl(bundle / 'items.jsonl', items)
     write_once(bundle / 'manifest.json', json_bytes({'role': 'demo', 'files': [
         {'path': 'items.jsonl', 'sha256': digest((bundle / 'items.jsonl').read_bytes())}]}))
     database = tmp_path / 'review.sqlite'
-    server = create_server(bundle, database, '127.0.0.1', 0, ui='legacy')
+    server = create_server(bundle, database, '127.0.0.1', 0, ui='selection' if integrated else 'legacy')
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     yield server, bundle, database
     server.shutdown()
     thread.join()
     server.server_close()
+
+
+def open_integrated(page, selection_app, index=0):
+    server, _, _ = selection_app
+    base = f'http://127.0.0.1:{server.server_port}'
+    page.goto(base)
+    page.get_by_role('button', name='Open passage').nth(index).click()
+    page.get_by_role('button', name='Show proposed labels', exact=True).click()
+    task_id = page.locator('#passage').get_attribute('data-task-id')
+    return base, task_id
+
+
+def saved_item(page, base, task_id):
+    return page.request.get(base + '/api/tasks/' + task_id).json()
+
+
+def decision_rows(selection_app):
+    with sqlite3.connect(selection_app[2]) as connection:
+        return [(json.loads(payload), json.loads(result)) for payload, result in
+                connection.execute('SELECT payload, result FROM decisions ORDER BY rowid')]
+
+
+def edit_sentiment(page, value='No sentiment expressed'):
+    page.get_by_role('button', name='Positive', exact=True).first.click()
+    page.get_by_role('button', name=value, exact=True).click()
+
+
+@pytest.mark.parametrize('selection_app', ['complete_proposal_ui'], indirect=True)
+def test_session_save_does_not_accept_untouched_proposals(page, selection_app):
+    base, task_id = open_integrated(page, selection_app)
+    edit_sentiment(page)
+    page.get_by_role('button', name='Save', exact=True).click()
+    expect(page.locator('#review-message')).to_contain_text('Saved')
+    expect(page.get_by_role('button', name='Not expressed', exact=True)).to_be_visible()
+    saved = saved_item(page, base, task_id)
+    assert saved['review_summary']['name_audit'] == 'pending'
+    assert saved['review_summary']['proposals_to_confirm'] > 0
+    assert saved['annotation_revision'] == 2
+    row = saved['annotation']['occurrences'][0]
+    assert row['sentiment'] == 'not_expressed' and all(row['known'].values())
+    stamps = saved['annotation']['review_workflow']['field_reviews'][row['mention_id']]
+    assert set(stamps) == {'sentiment'}
+    assert stamps['sentiment']['reviewer'] == 'Krushi'
+    assert len(decision_rows(selection_app)) == 1
+
+
+@pytest.mark.parametrize('selection_app', ['complete_proposal_ui'], indirect=True)
+def test_session_approve_unchanged_proposals_at_end(page, selection_app):
+    base, task_id = open_integrated(page, selection_app)
+    expect(page.locator('#session-status')).to_contain_text('Krushi')
+    page.get_by_role('button', name='Approve & next', exact=True).click()
+    expect(page.locator('#review-summary')).to_contain_text('End of the current queue')
+    expect(page.locator('#review-summary')).to_contain_text('1 approved of 1')
+    assert page.locator('#passage').text_content() == ''
+    saved = saved_item(page, base, task_id)
+    assert saved['annotation_revision'] == 2
+    assert saved['review_summary']['name_audit'] == 'confirmed'
+    assert saved['review_summary']['proposals_to_confirm'] == 0
+    assert saved['review_summary']['partial_source_coverage'] is True
+    row = saved['annotation']['occurrences'][0]
+    assert all(value['state'] == 'confirmed' for value in saved['review_summary']['fields'][row['mention_id']].values())
+    logs = decision_rows(selection_app)
+    assert len(logs) == 1 and logs[0][0]['value']['operations'] == []
+    assert logs[0][0]['actor_kind'] == 'human'
+
+
+@pytest.mark.parametrize('selection_app', [{'variants': ['complete_proposal']}], indirect=True)
+def test_session_unknown_fields_remain_unknown_after_reopen(page, browser, selection_app):
+    base, task_id = open_integrated(page, selection_app)
+    edit_sentiment(page, 'Unknown sentiment')
+    page.get_by_role('button', name='Edit intent', exact=True).click()
+    page.get_by_role('button', name='Created unresolved', exact=True).click()
+    expect(page.get_by_role('button', name='Approve & next', exact=True)).to_be_disabled()
+    page.get_by_role('button', name='Save', exact=True).click()
+    expect(page.locator('#review-message')).to_contain_text('Saved')
+    row = saved_item(page, base, task_id)['annotation']['occurrences'][0]
+    assert row['sentiment'] is None and row['known']['sentiment'] is False
+    assert row['known']['created'] is False and row['known']['used'] is True
+    assert row['intents'] == ['used']
+    page.close()
+    context = browser.new_context()
+    reopened = context.new_page()
+    open_integrated(reopened, selection_app)
+    expect(reopened.get_by_role('button', name='Unknown sentiment', exact=True)).to_be_visible()
+    expect(reopened.get_by_role('button', name='Created unresolved', exact=True)).to_be_visible()
+    assert len(decision_rows(selection_app)) == 1
+    context.close()
+
+
+@pytest.mark.parametrize('selection_app', [{'variants': ['negative']}, {'variants': [None]}], indirect=True)
+def test_session_healthy_empty_approval_and_empty_save(page, selection_app):
+    base, task_id = open_integrated(page, selection_app)
+    expect(page.locator('#software-cards')).to_contain_text('No software names displayed')
+    page.get_by_role('button', name='Save & next', exact=True).click()
+    expect(page.locator('#review-summary')).to_contain_text('End of the current queue')
+    assert decision_rows(selection_app) == []
+    page.get_by_role('button', name='Open passage').first.click()
+    page.get_by_role('button', name='Show proposed labels', exact=True).click()
+    page.get_by_role('button', name='Approve & next', exact=True).click()
+    expect(page.locator('#review-summary')).to_contain_text('1 approved of 1')
+    item = saved_item(page, base, task_id)
+    assert item['annotation']['occurrences'] == []
+    assert item['review_summary']['name_audit'] == 'confirmed'
+    assert item['annotation_revision'] == 2
+    assert len(decision_rows(selection_app)) == 1
+
+
+@pytest.mark.parametrize('selection_app', [{'variants': ['alias']}], indirect=True)
+def test_session_alias_approval_preserves_independent_labels(page, selection_app):
+    base, task_id = open_integrated(page, selection_app)
+    before = saved_item(page, base, task_id)
+    expect(page.get_by_role('region', name='Alias groups')).to_be_visible()
+    page.get_by_role('button', name='Approve & next', exact=True).click()
+    expect(page.locator('#review-summary')).to_contain_text('1 approved of 1')
+    after = saved_item(page, base, task_id)
+    for old, new in zip(before['annotation']['occurrences'], after['annotation']['occurrences']):
+        for field in ['known', 'intents', 'sentiment', 'version_links']:
+            assert old[field] == new[field]
+    assert all(value['state'] == 'confirmed' for value in after['review_summary']['relations'].values())
+    assert len(decision_rows(selection_app)) == 1
+
+
+@pytest.mark.parametrize('selection_app', [{'variants': [None]}], indirect=True)
+def test_session_source_issue_cannot_approve_or_be_hidden_at_end(page, selection_app):
+    base, task_id = open_integrated(page, selection_app)
+    item = saved_item(page, base, task_id)
+    from review_workflow_fixtures import batch
+    issue = {'issue_id':'broken', 'code':'broken_passage', 'message':'Missing source text.',
+             'span':item['task']['context_span'], 'task_id':task_id, 'text_revision':item['task']['text_revision']}
+    payload = batch(item, [{'operation_id':'issue', 'action':'record_source_issue',
+                           'reason_code':'broken_passage', 'value':issue}])
+    payload['actor_kind'] = 'system'
+    token = page.request.get(base + '/api/session').json()['csrf_token']
+    response = page.request.post(base + '/api/decisions', data=payload,
+                                 headers={'Origin':base,'X-CSRF-Token':token})
+    assert response.ok, response.text()
+    open_integrated(page, selection_app)
+    expect(page.locator('.source-issues')).to_contain_text('Missing source text')
+    expect(page.get_by_role('button', name='Approve & next', exact=True)).to_be_disabled()
+    page.get_by_role('button', name='Save & next', exact=True).click()
+    expect(page.locator('#review-summary')).to_contain_text('1 source issues')
+    assert saved_item(page, base, task_id)['annotation_revision'] == 2
+    assert len(decision_rows(selection_app)) == 1
+
+
+@pytest.mark.parametrize('selection_app', ['complete_proposal_ui'], indirect=True)
+def test_session_lost_response_retries_exact_payload_once(page, selection_app):
+    base, task_id = open_integrated(page, selection_app)
+    edit_sentiment(page)
+    envelopes = []
+    def lose_first_response(route):
+        envelopes.append(route.request.post_data_json)
+        response = route.fetch()
+        assert response.ok
+        if len(envelopes) == 1:
+            route.abort('failed')
+        else:
+            route.fulfill(response=response)
+    page.route('**/api/decisions', lose_first_response)
+    page.get_by_role('button', name='Save', exact=True).click()
+    expect(page.locator('#review-message')).to_contain_text('outcome unknown')
+    expect(page.get_by_role('button', name='Save', exact=True)).to_be_disabled()
+    expect(page.get_by_role('button', name='Open passage')).to_be_disabled()
+    page.keyboard.press('Alt+ArrowRight')
+    assert page.locator('#passage').get_attribute('data-task-id') == task_id
+    page.get_by_role('button', name='Retry exact save', exact=True).click()
+    expect(page.locator('#review-message')).to_contain_text('Saved')
+    assert envelopes[0] == envelopes[1]
+    assert len(decision_rows(selection_app)) == 1
+    assert saved_item(page, base, task_id)['annotation_revision'] == 2
+    altered = dict(envelopes[0], reason='Different request using the same ID')
+    token = page.request.get(base + '/api/session').json()['csrf_token']
+    response = page.request.post(base + '/api/decisions', data=altered,
+                                 headers={'Origin':base,'X-CSRF-Token':token})
+    assert response.status == 400 and response.json()['error'] == 'DECISION_ID_CONFLICT'
+    assert len(decision_rows(selection_app)) == 1
+
+
+@pytest.mark.parametrize('selection_app', [{'variants': ['complete_proposal', 'negative']}], indirect=True)
+def test_session_delayed_save_blocks_navigation_and_preserves_destination(page, selection_app):
+    server = selection_app[0]
+    base = f'http://127.0.0.1:{server.server_port}'
+    queue = page.request.get(base + '/api/queue').json()['items']
+    index = next(i for i, item in enumerate(queue) if item['document_id'] == 'selection-demo')
+    base, task_id = open_integrated(page, selection_app, index)
+    edit_sentiment(page)
+    pending = []
+    def delay_response(route):
+        pending.append((route, route.fetch()))
+    page.route('**/api/decisions', delay_response)
+    page.get_by_role('button', name='Save', exact=True).click()
+    expect(page.get_by_role('button', name='Save', exact=True)).to_be_disabled()
+    page.wait_for_function("document.querySelector('#review-footer').textContent.includes('Saving')")
+    page.keyboard.press('Alt+ArrowLeft')
+    page.keyboard.press('Alt+ArrowRight')
+    for button in page.get_by_role('button', name='Open passage').all():
+        expect(button).to_be_disabled()
+    assert page.locator('#passage').get_attribute('data-task-id') == task_id
+    assert pending
+    pending[0][0].fulfill(response=pending[0][1])
+    expect(page.locator('#review-message')).to_contain_text('Saved')
+    expect(page.get_by_role('button', name='Not expressed', exact=True)).to_be_visible()
+    assert saved_item(page, base, task_id)['annotation_revision'] == 2
+    assert len(decision_rows(selection_app)) == 1
+
+
+@pytest.mark.parametrize('selection_app', ['complete_proposal_ui'], indirect=True)
+def test_session_reload_failure_never_resubmits_committed_decision(page, selection_app):
+    base, task_id = open_integrated(page, selection_app)
+    edit_sentiment(page)
+    page.route('**/api/tasks/**', lambda route: route.abort('failed'))
+    page.get_by_role('button', name='Save', exact=True).click()
+    expect(page.locator('#review-message')).to_contain_text('Saved; reload failed')
+    expect(page.get_by_role('button', name='Save', exact=True)).to_be_disabled()
+    assert len(decision_rows(selection_app)) == 1
+    page.unroute('**/api/tasks/**')
+    page.get_by_role('button', name='Reload saved passage', exact=True).click()
+    expect(page.locator('#review-message')).to_have_text('Saved.')
+    expect(page.get_by_role('button', name='Not expressed', exact=True)).to_be_visible()
+    assert saved_item(page, base, task_id)['annotation_revision'] == 2
+    assert len(decision_rows(selection_app)) == 1
+
+
+@pytest.mark.parametrize('selection_app', ['complete_proposal_ui'], indirect=True)
+def test_session_conflict_requires_review_and_reapplies_only_human_changes(page, context, selection_app):
+    base, task_id = open_integrated(page, selection_app)
+    other = context.new_page()
+    open_integrated(other, selection_app)
+    other.get_by_role('button', name='Edit intent', exact=True).click()
+    other.get_by_role('button', name='Mentioned only', exact=True).click()
+    edit_sentiment(page)
+    page.get_by_role('button', name='Save', exact=True).click()
+    expect(page.locator('#review-message')).to_contain_text('Saved')
+    other.get_by_role('button', name='Save', exact=True).click()
+    expect(other.locator('#review-message')).to_contain_text('draft is intact')
+    expect(other.get_by_role('button', name='Mentioned', exact=True)).to_be_visible()
+    expect(other.get_by_role('button', name='Positive', exact=True)).to_be_visible()
+    other.get_by_role('button', name='Keep draft', exact=True).click()
+    expect(other.get_by_role('button', name='Mentioned', exact=True)).to_be_visible()
+    expect(other.get_by_role('button', name='Reapply reviewed changes', exact=True)).to_have_count(0)
+    other.get_by_role('button', name='Review differences', exact=True).click()
+    expect(other.locator('#session-choices')).to_contain_text('not_expressed')
+    other.get_by_role('button', name='Reapply reviewed changes', exact=True).click()
+    expect(other.get_by_role('button', name='Not expressed', exact=True)).to_be_visible()
+    expect(other.get_by_role('button', name='Mentioned', exact=True)).to_be_visible()
+    other.get_by_role('button', name='Save', exact=True).click()
+    expect(other.locator('#review-message')).to_contain_text('Saved')
+    saved = saved_item(page, base, task_id)
+    assert saved['annotation']['occurrences'][0]['sentiment'] == 'not_expressed'
+    assert saved['annotation']['occurrences'][0]['intents'] == ['mentioned']
+    assert saved['annotation_revision'] == 3
+    logs = decision_rows(selection_app)
+    assert len(logs) == 2
+    assert logs[1][0]['base_annotation_revision'] == 2
+    assert logs[0][0]['decision_id'] != logs[1][0]['decision_id']
+
+
+@pytest.mark.parametrize('selection_app', [{'variants': ['complete_proposal', 'negative']}], indirect=True)
+@pytest.mark.parametrize('trigger,choice', [('previous','stay'), ('queue','discard'), ('filter','save_leave'), ('alt','discard')])
+def test_session_dirty_navigation_choices_and_beforeunload(page, selection_app, trigger, choice):
+    server = selection_app[0]
+    base = f'http://127.0.0.1:{server.server_port}'
+    queue = page.request.get(base + '/api/queue').json()['items']
+    index = next(i for i, item in enumerate(queue) if item['document_id'] == 'selection-demo')
+    base, task_id = open_integrated(page, selection_app, index)
+    edit_sentiment(page)
+    assert page.evaluate("() => {const event=new Event('beforeunload',{cancelable:true});window.dispatchEvent(event);return event.defaultPrevented;}")
+    if trigger == 'previous':
+        assert index > 0
+        page.get_by_role('button', name='Previous', exact=True).click()
+    elif trigger == 'queue':
+        page.get_by_role('button', name='Open passage').nth(1-index).click()
+    elif trigger == 'filter':
+        page.get_by_label('Filter passages').select_option('in_progress')
+    else:
+        page.keyboard.press('Alt+ArrowLeft' if index else 'Alt+ArrowRight')
+    expect(page.locator('#session-choices')).to_contain_text('Unsaved changes')
+    labels = {'stay':'Stay here','discard':'Discard and continue','save_leave':'Save and continue'}
+    page.get_by_role('button', name=labels[choice], exact=True).click()
+    expect(page.locator('#session-choices')).to_be_empty()
+    if choice == 'stay':
+        assert page.locator('#passage').get_attribute('data-task-id') == task_id
+        expect(page.get_by_role('button', name='Not expressed', exact=True)).to_be_visible()
+        assert len(decision_rows(selection_app)) == 0
+    else:
+        expect(page.get_by_role('button', name='Save', exact=True)).to_be_disabled()
+        assert not page.evaluate("() => {const event=new Event('beforeunload',{cancelable:true});window.dispatchEvent(event);return event.defaultPrevented;}")
+        assert len(decision_rows(selection_app)) == (1 if choice == 'save_leave' else 0)
+        if choice == 'save_leave':
+            expect(page.get_by_label('Filter passages')).to_have_value('in_progress')
+            assert saved_item(page, base, task_id)['annotation_revision'] == 2
+
+
+@pytest.mark.parametrize('selection_app', [{'variants': ['multi']}], indirect=True)
+def test_session_alias_hashing_serializes_with_queued_save(page, selection_app):
+    base, task_id = open_integrated(page, selection_app)
+    select_passage(page, 0, 5)
+    page.locator('#passage').dispatch_event('mouseup')
+    page.get_by_role('button', name='Identify name', exact=True).click()
+    expect(page.get_by_role('button', name='Alpha', exact=True)).to_be_visible()
+    select_passage(page, 7, 8)
+    page.locator('#passage').dispatch_event('mouseup')
+    page.get_by_role('button', name='Link alias…', exact=True).click()
+    page.get_by_role('button', name='Use displayed evidence', exact=True).click()
+    page.evaluate('''() => {
+      const original=crypto.subtle.digest.bind(crypto.subtle);
+      window.releaseDigest=null;
+      crypto.subtle.digest=async (...args)=>{
+        if(!window.releaseDigest) await new Promise(resolve=>window.releaseDigest=resolve);
+        return original(...args);
+      };
+    }''')
+    page.get_by_role('button', name='Stage alias link', exact=True).click()
+    page.wait_for_function('typeof window.releaseDigest === "function"')
+    page.get_by_role('button', name='Save', exact=True).click()
+    expect(page.get_by_role('button', name='Save', exact=True)).to_be_disabled()
+    assert decision_rows(selection_app) == []
+    page.evaluate('window.releaseDigest()')
+    expect(page.locator('#review-message')).to_contain_text('Saved')
+    expect(page.get_by_role('region', name='Alias groups')).to_contain_text('Alpha / A')
+    saved = saved_item(page, base, task_id)
+    assert len(saved['annotation']['occurrences']) == 2
+    for row in saved['annotation']['occurrences']:
+        assert row['known'] == dict(software=True, versions=False, created=False, used=False, shared=False, sentiment=False)
+        assert row['sentiment'] is None and row['intents'] is None
+    assert len(saved['annotation']['alias_annotations']['relations']) == 1
+    assert saved['annotation_revision'] == 2
+    assert len(decision_rows(selection_app)) == 1
+
+
+@pytest.mark.parametrize('selection_app', ['complete_proposal_ui'], indirect=True)
+def test_session_blind_discovery_reveal_reconciliation_save(page, selection_app):
+    base = f'http://127.0.0.1:{selection_app[0].server_port}'
+    page.goto(base)
+    page.get_by_role('button', name='Open passage').first.click()
+    expect(page.locator('#passage')).to_have_text('We used excellent scikit-learn v0.17.')
+    expect(page.get_by_role('button', name='Positive', exact=True)).to_have_count(0)
+    select_passage(page, 18, 29)
+    page.locator('#passage').dispatch_event('mouseup')
+    page.get_by_role('button', name='Identify name', exact=True).click()
+    expect(page.locator('#software-cards')).to_contain_text('Unknown sentiment')
+    page.get_by_role('button', name='Show proposed labels', exact=True).click()
+    expect(page.get_by_role('region', name='Discovery reconciliation')).to_be_visible()
+    expect(page.get_by_role('button', name='Save', exact=True)).to_be_disabled()
+    page.get_by_role('button', name='Use scikit-learn', exact=True).click()
+    page.get_by_role('button', name='Save', exact=True).click()
+    expect(page.locator('#review-message')).to_contain_text('Saved')
+    expect(page.get_by_role('button', name='Positive', exact=True)).to_be_visible()
+    expect(page.get_by_role('button', name='Show proposed labels', exact=True)).to_have_count(0)
+    task_id = page.locator('#passage').get_attribute('data-task-id')
+    saved = saved_item(page, base, task_id)
+    mention = saved['annotation']['occurrences'][0]
+    assert set(saved['annotation']['review_workflow']['field_reviews'][mention['mention_id']]) == {'software'}
+    assert saved['review_summary']['name_audit'] == 'pending'
+    assert saved['review_summary']['proposals_to_confirm'] > 0
+
+
+@pytest.mark.parametrize('selection_app', ['complete_proposal_ui'], indirect=True)
+def test_session_conflict_rechecks_revision_and_missing_targets(page, context, selection_app):
+    base, task_id = open_integrated(page, selection_app)
+    other = context.new_page()
+    open_integrated(other, selection_app)
+    edit_sentiment(other, 'Unknown sentiment')
+    edit_sentiment(page)
+    page.get_by_role('button', name='Save', exact=True).click()
+    expect(page.locator('#review-message')).to_contain_text('Saved')
+    other.get_by_role('button', name='Save', exact=True).click()
+    expect(other.locator('#review-message')).to_contain_text('draft is intact')
+    other.get_by_role('button', name='Review differences', exact=True).click()
+    expect(other.get_by_role('button', name='Reapply reviewed changes', exact=True)).to_be_visible()
+    page.get_by_role('button', name='Correct name', exact=True).click()
+    page.get_by_role('button', name='Remove name', exact=True).click()
+    page.get_by_role('button', name='Save', exact=True).click()
+    expect(page.locator('#review-message')).to_contain_text('Saved')
+    other.get_by_role('button', name='Reapply reviewed changes', exact=True).click()
+    expect(other.locator('#review-message')).to_contain_text('changed again')
+    other.get_by_role('button', name='Review differences', exact=True).click()
+    expect(other.locator('#review-message')).to_contain_text('UNKNOWN_OCCURRENCE')
+    expect(other.get_by_role('button', name='Unknown sentiment', exact=True)).to_be_visible()
+    expect(other.get_by_role('button', name='Reapply reviewed changes', exact=True)).to_have_count(0)
+    assert len(decision_rows(selection_app)) == 2
+    assert saved_item(page, base, task_id)['annotation']['occurrences'] == []
+    other.get_by_role('button', name='Reload server state', exact=True).click()
+    expect(other.locator('#software-cards')).to_contain_text('No software names displayed')
+    assert len(decision_rows(selection_app)) == 2
+
+
+@pytest.mark.parametrize('selection_app', [{'variants': ['negative', 'complete_proposal']}], indirect=True)
+def test_session_filtered_next_captures_destination_before_refresh(page, selection_app):
+    base, task_id = open_integrated(page, selection_app, 0)
+    page.get_by_label('Filter passages').select_option('pending')
+    page.get_by_role('button', name='Open passage').first.click()
+    page.get_by_role('button', name='Show proposed labels', exact=True).click()
+    task_id = page.locator('#passage').get_attribute('data-task-id')
+    next_id = page.request.get(base + '/api/queue').json()['items'][1]['task_id']
+    page.get_by_role('button', name='Approve & next', exact=True).click()
+    expect(page.locator('#passage')).to_have_attribute('data-task-id', next_id)
+    expect(page.get_by_role('button', name='Show proposed labels', exact=True)).to_be_visible()
+    assert saved_item(page, base, task_id)['review_summary']['workflow_status'] == 'approved'
+    assert saved_item(page, base, next_id)['annotation_revision'] == 1
+    assert len(decision_rows(selection_app)) == 1
 
 
 def load(page, selection_app):
@@ -107,6 +517,7 @@ def test_view_exact_name_activates_without_edit_and_proposals_are_compact(page, 
     page.keyboard.press('Escape')
     page.get_by_role('button', name='Approval scope', exact=True).click()
     expect(page.get_by_role('dialog')).to_contain_text('including unchanged proposals')
+    expect(page.get_by_role('dialog').get_by_role('button', name='Close', exact=True)).to_be_focused()
     expect(page.get_by_role('dialog')).to_contain_text('inside the owned region')
     page.keyboard.press('Escape')
     expect(page.get_by_role('button', name='Approval scope', exact=True)).to_be_focused()
@@ -232,7 +643,7 @@ def test_view_readonly_source_issue_callbacks_and_task_switch(page, selection_ap
       sessionState={};queue=[{task_id:draft.view.task.task_id},{task_id:'next-task'}];renderView();
     }''')
     page.get_by_role('button', name='Approve & next', exact=True).click()
-    assert page.evaluate('calls.at(-1)') == {'save': ['approve', 'next-task']}
+    assert page.evaluate('calls.at(-1)') == {'save': ['approve', 'next-task', {'advance': True}]}
     page.evaluate('''() => {
       draft.view.annotation.review_workflow={source_issues:[{issue_id:'fixture-issue',code:'broken_passage',message:'Sentence is truncated.'}]};
       draft.operations=[{action:'record_note',note:'fixture'}];renderView();
@@ -349,7 +760,7 @@ def test_view_approved_state_and_clean_next(page, selection_app, partial):
     expect(page.locator('#review-summary')).not_to_contain_text('check for missed names')
     expect(page.get_by_role('button', name='Save', exact=True)).to_be_disabled()
     page.get_by_role('button', name='Save & next', exact=True).click()
-    assert page.evaluate('calls.at(-1)') == {'save': ['save', 'next']}
+    assert page.evaluate('calls.at(-1)') == {'save': ['save', 'next', {'advance': True}]}
 
 
 def test_view_empty_source_blocker_can_skip_without_approval(page, selection_app):
@@ -363,7 +774,7 @@ def test_view_empty_source_blocker_can_skip_without_approval(page, selection_app
     expect(page.locator('#review-summary')).not_to_contain_text('All displayed labels filled')
     expect(page.get_by_role('button', name='Approve & next', exact=True)).to_be_disabled()
     page.get_by_role('button', name='Save & next', exact=True).click()
-    assert page.evaluate('calls.at(-1)') == {'save': ['save', 'next']}
+    assert page.evaluate('calls.at(-1)') == {'save': ['save', 'next', {'advance': True}]}
     page.get_by_role('button', name='Open passage 2: next-document', exact=True).click()
     assert page.evaluate('calls.at(-1)') == {'navigate': 'next'}
 

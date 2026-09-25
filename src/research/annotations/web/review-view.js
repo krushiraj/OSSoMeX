@@ -25,6 +25,8 @@ export const mountReviewView = (root, callbacks) => {
   let panel = null, restoreAfterAction = false;
   const header = el('header', undefined, {class:'workspace-header'});
   const message = el('div', '', {id:'review-message', role:'alert'});
+  const sessionStatus = el('p', '', {id:'session-status'});
+  const sessionChoices = el('section', undefined, {id:'session-choices','aria-label':'Review session choices'});
   const layout = el('div', undefined, {class:'workspace-layout'});
   const sidebar = el('aside', undefined, {class:'queue', 'aria-label':'Passage queue'});
   const content = el('section', undefined, {class:'review-content'});
@@ -38,9 +40,9 @@ export const mountReviewView = (root, callbacks) => {
   const menu = el('section', undefined, {id:'selection-menu', class:'popover', role:'dialog', 'aria-label':'Selection actions', hidden:''});
   paper.append(el('h2', 'Paper passage'),el('p','',{class:'source-identity'}),el('p','',{class:'source-guide'}), passage, el('p','Select text to identify software, link a version, or attach evidence.', {class:'reading-hint'}));
   reading.append(paper, cards); content.append(summaryNode, reading, extras); layout.append(sidebar, content);
-  root.replaceChildren(header, message, layout, footer, menu);
+  root.replaceChildren(header, sessionStatus, message, sessionChoices, layout, footer, menu);
   const readOnly = () => session.readOnly || session.capabilities?.readOnly || session.capabilities?.editing === false;
-  const locked = () => readOnly() || session.saving || Boolean(session.uncertainRequest || session.conflict);
+  const locked = () => readOnly() || session.busy || session.saving || Boolean(session.uncertainRequest || session.conflict || session.committedReload || session.dirtyNavigation);
   const rows = () => draft.view.annotation.occurrences;
   const relations = () => draft.view.annotation.alias_annotations?.relations || [];
   const byId = id => rows().find(row => row.mention_id === id);
@@ -71,7 +73,7 @@ export const mountReviewView = (root, callbacks) => {
     root.append(panel);
     return panel;
   };
-  const ready = node => { place(node); node.querySelector('button:not(.close), select, input, textarea')?.focus({preventScroll:true}); };
+  const ready = node => { place(node); (node.querySelector('button:not(.close), select, input, textarea')||node.querySelector('button.close'))?.focus({preventScroll:true}); };
   const actionButton = (node, text, action, disabled = false) => {
     const b = button(text, () => send(typeof action === 'function' ? action() : action));
     b.disabled = locked() || disabled; node.append(b); return b;
@@ -110,7 +112,7 @@ export const mountReviewView = (root, callbacks) => {
       const evidence = selection ? [{start:selection.start,end:selection.end}] : row.evidence[evidenceField];
       node.append(el('p',selection?'Selected evidence:':'Current evidence:',{class:'muted'})); evidencePreview(node,evidence);
       if (field==='sentiment') {
-        for (const value of ['positive','negative','mixed','not_expressed']) actionButton(node,title(value),{type:'set_field',mentionId:row.mention_id,field,value,evidence},value!=='not_expressed'&&!evidence.length);
+        for (const value of ['positive','negative','mixed','not_expressed']) actionButton(node,value==='not_expressed'?'No sentiment expressed':title(value),{type:'set_field',mentionId:row.mention_id,field,value,evidence},value!=='not_expressed'&&!evidence.length);
         actionButton(node,'Unknown sentiment',{type:'set_field',mentionId:row.mention_id,field,value:null});
       } else {
         const bits = field==='intents'?['created','used','shared']:[field];
@@ -226,14 +228,27 @@ export const mountReviewView = (root, callbacks) => {
   };
   root.addEventListener('focusin',keepFocusVisible);
   const showError = text => {message.textContent=text||'';};
+  const renderSession = () => {
+    sessionStatus.textContent=session.reviewer?`Reviewer: ${session.reviewer}. ${session.role==='demo'?'Synthetic demo. No research labels.':'Local review.'} Decisions record your explicit review actions.`:'';
+    sessionChoices.replaceChildren();
+    const choice=(label,value)=>{const b=button(label,()=>callbacks.onAction({type:'session_choice',choice:value}));b.disabled=Boolean(session.busy||session.saving);sessionChoices.append(b);};
+    if(session.dirtyNavigation){sessionChoices.append(el('p','Unsaved changes. Save before leaving, discard them, or stay here.'));choice('Save and continue','save_leave');choice('Discard and continue','discard');choice('Stay here','stay');}
+    if(session.uncertainRequest){sessionChoices.append(el('p','Edits and navigation are paused until the pending save is resolved.'));choice('Retry exact save','retry');}
+    if(session.committedReload)choice('Reload saved passage','reload_saved');
+    if(session.conflict){
+      choice('Reload server state','reload');choice('Keep draft','keep');choice('Review differences','review');
+      if(session.conflict.reviewed){const details=el('details');details.open=true;details.append(el('summary','Previous, server and reapplied labels'),el('pre',session.conflict.differences));sessionChoices.append(details);choice('Reapply reviewed changes','reapply');}
+    }
+  };
   const renderQueue = () => {
     sidebar.replaceChildren();const details=el('details');details.open=innerWidth>800;details.append(el('summary',`Passages (${queue.length})`));
-    const filter=el('select',undefined,{'aria-label':'Filter passages'});for(const [value,label] of [['all','All passages'],['pending','Not reviewed'],['in_progress','In progress'],['approved','Approved'],['source_issue','Source issues']])filter.append(el('option',label,{value}));filter.value=session.filter||'all';filter.addEventListener('change',()=>callbacks.onFilter(filter.value));details.append(filter);
+    const filter=el('select',undefined,{'aria-label':'Filter passages'});for(const [value,label] of [['all','All passages'],['pending','Not reviewed'],['in_progress','In progress'],['approved','Approved'],['source_issue','Source issues']])filter.append(el('option',label,{value}));filter.value=session.filter||'all';filter.disabled=Boolean(locked());filter.addEventListener('change',()=>callbacks.onFilter(filter.value));details.append(filter);
     const list=el('nav',undefined,{class:'queue-list','aria-label':'Passages'});
-    for(const [index,item] of queue.entries()){const id=item.task_id||item.task?.task_id;const identity=item.document_id||item.task?.document_id||item.title||`Passage ${index+1}`;const b=button('',()=>{clearSelection();callbacks.onNavigate(id);},{'aria-current':String(id===draft?.view.task.task_id),'aria-label':`Open passage ${index+1}: ${identity}`});b.append(el('span',identity),el('small',queueReason(item.review_summary?.workflow_status||item.workflow_status||item.reason)));list.append(b);}details.append(list);sidebar.append(details);
+    for(const [index,item] of queue.entries()){const id=item.task_id||item.task?.task_id;const identity=item.document_id||item.task?.document_id||item.title||`Passage ${index+1}`;const b=button('',()=>{clearSelection();callbacks.onNavigate(id);},{'aria-current':String(id===draft?.view.task.task_id),'aria-label':`Open passage ${index+1}: ${identity}`});b.disabled=Boolean(locked());b.append(el('span',identity),el('small',queueReason(item.review_summary?.workflow_status||item.workflow_status||item.reason)));list.append(b);}details.append(list);sidebar.append(details);
   };
   const render = (next, ignoredSummary, nextQueue=[], nextSession={}) => {
     queue=Array.isArray(nextQueue)?nextQueue:nextQueue.items||[];session=nextSession;
+    renderSession();
     if(!next){
       clearSelection();taskKey=null;draft=null;restoreAfterAction=false;
       header.replaceChildren(el('h1','Software annotation review'),button('Export',()=>callbacks.onExport()));
@@ -334,8 +349,9 @@ export const mountReviewView = (root, callbacks) => {
     footer.replaceChildren();const controls=el('div',undefined,{class:'toolbar'});
     const nextIndex=queue.findIndex(item=>(item.task_id||item.task?.task_id)===draft.view.task.task_id)+1;
     const destination=queue[nextIndex]?.task_id||queue[nextIndex]?.task?.task_id||null;
-    const blocker=readOnly()?'Read-only review':session.saving?'Saving…':session.uncertainRequest?'Resolve the pending save before continuing.':session.conflict?'Reload or resolve the conflicting revision.':draft.reconciliation.length?'Resolve overlapping discoveries before saving.':!draft.revealed&&draft.blindFindings.length?'Reveal proposals to reconcile discoveries.':'';
-    for(const [label,completion,dest] of [['Save','save',null],['Save & next','save',destination],['Approve & next','approve',destination]]){const b=button(label,()=>callbacks.onSave(completion,dest),{class:completion==='approve'?'primary':'',...(completion==='approve'?{'aria-describedby':'approval-scope'}:{})});b.disabled=Boolean(blocker)||(completion==='approve'&&(!draft.revealed||!summary.can_approve))||(label==='Save'&&!draft.dirty);controls.append(b);}
+    const previous=button('Previous',()=>callbacks.onNavigate('previous'));previous.disabled=Boolean(locked())||nextIndex<2;controls.append(previous);
+    const blocker=readOnly()?'Read-only review':session.saving?'Saving…':session.busy?'Loading…':session.uncertainRequest?'Resolve the pending save before continuing.':session.conflict?'Reload or resolve the conflicting revision.':session.committedReload?'Reload the saved passage before continuing.':session.dirtyNavigation?'Choose what to do with unsaved changes.':draft.reconciliation.length?'Resolve overlapping discoveries before saving.':!draft.revealed&&draft.blindFindings.length?'Reveal proposals to reconcile discoveries.':'';
+    for(const [label,completion,dest] of [['Save','save',null],['Save & next','save',destination],['Approve & next','approve',destination]]){const b=button(label,()=>callbacks.onSave(completion,dest,...(label==='Save'?[]:[{advance:true}])),{class:completion==='approve'?'primary':'',...(completion==='approve'?{'aria-describedby':'approval-scope'}:{})});b.disabled=Boolean(blocker)||(completion==='approve'&&(!draft.revealed||!summary.can_approve))||(label==='Save'&&!draft.dirty);controls.append(b);}
     footer.append(controls,el('p',blocker||(!draft.revealed?'Reveal proposals before approval.':!summary.can_approve?'Resolve unknown labels and source issues before approval.':draft.dirty?'Unsaved changes. Approval also confirms the name audit.':'Approval confirms displayed labels and the name audit.'),{class:'footer-note'}));
     footer.append(button('Approval scope',()=>{const node=openPanel('Approval scope');node.append(el('p','Approve confirms all displayed software names, versions, intent, sentiment and alias decisions, including unchanged proposals. It also records that you checked for missed software names inside the owned region. Surrounding context is evidence only and is not included in the name audit.',{id:'approval-scope-expanded'}));ready(node);},{'aria-describedby':'approval-scope'}),el('span','Approve confirms all displayed software names, versions, intent, sentiment and alias decisions, including unchanged proposals, and a missed-name check in the owned region only. Surrounding context is excluded from the name audit.',{id:'approval-scope',class:'visually-hidden'}));
     if(focusedCard){const node=[...cards.querySelectorAll('article')].find(n=>n.dataset.mentionId===focusedCard);node?.focus({preventScroll:true});}
