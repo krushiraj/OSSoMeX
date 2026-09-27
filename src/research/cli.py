@@ -400,6 +400,8 @@ def main(argv: list[str] | None = None) -> int:
     register_data(sub)
     from .annotations.cli import register as register_annotations
     register_annotations(sub)
+    from .training.cli import register as register_detector
+    register_detector(sub)
 
     p = sub.add_parser("inventory")
     p.add_argument("--input", required=True)

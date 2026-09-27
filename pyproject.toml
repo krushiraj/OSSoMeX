@@ -15,9 +15,10 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8,<10", "pytest-playwright>=0.5,<1"]
 ml = [
-    "torch>=2.2",
-    "transformers>=4.40",
-    "datasets>=2.19",
+    "torch>=2.6,<3",
+    "transformers>=4.40,<5",
+    "datasets>=2.19,<5",
+    "numpy>=1.26,<3",
 ]
 
 [tool.setuptools.packages.find]

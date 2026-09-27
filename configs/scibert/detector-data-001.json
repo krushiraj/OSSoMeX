@@ -1,0 +1,25 @@
+{
+  "parents": [
+    {"path":"data/scibert-v2/ecosystems-pilot-002/bundle/manifest.json","sha256":"205845b0131c16f05c9c3b63327ee07260cb658bc1f12d4b49e070184ac3fe30"},
+    {"path":"data/scibert-v2/ecosystems-expansion-001/bundle/manifest.json","sha256":"7c400bd82d59a8f091e6534a40bed0265cd80fc65ec235096e56a967873ff9f6"}
+  ],
+  "snapshots": [
+    {"path":"annotations/scibert-v2/ecosystems-pilot-002/exports/krushi-reviewed-001/manifest.json","sha256":"cc185fa7e32badd5a30f7ed71cdd8b8854bb117e769e9caff0ca67e768999fcb"},
+    {"path":"annotations/scibert-v2/icekat-alias-001/exports/krushi-reviewed-001/manifest.json","sha256":"2e255553e3672f5b9edc7fa36826b4f663a4205ce68c587d3f5d6fbcc50e9f85"},
+    {"path":"annotations/scibert-v2/ecosystems-expansion-001/exports/provisional-001/manifest.json","sha256":"895be8e5d3c78bc5af9f17b0ad1d65aaadc3b44914d1fa9f82c905f702979048"}
+  ],
+  "companions": [
+    {"path":"annotations/scibert-v2/ecosystems-pilot-002/reviews/krushi-chat-2026-09-25/manifest.json","sha256":"be1c7565a37bb8a5fd8e2714eafbc93f6a86a0a681a9c24510cae54631bde1a3"},
+    {"path":"annotations/scibert-v2/icekat-alias-001/reviews/krushi-chat-2026-09-25/manifest.json","sha256":"aacd31dd0405527b6f3f97a08064cf57ecd3c6762f2f96fb73c83d1287fdb247"}
+  ],
+  "attribution": [
+    {"path":"annotations/scibert-v2/ecosystems-expansion-001/attribution.corrected-001.jsonl","sha256":"6f1872b89e0b659cd2ab23ed2e86d8e985df3bff4d4fcdf8bab65aac06fc046b"},
+    {"path":"annotations/scibert-v2/ecosystems-expansion-001/attribution-correction.json","sha256":"d0a789d8faedd3bdd05116fb9e39d7df660d0293d1a089a913788a94a83bae8e"}
+  ],
+  "exclusions": [
+    {"path":"data/scibert-v2/corpus-001/documents.jsonl","sha256":"9d2613f7845672b8976493c09ee7bce6040faaa1d7fd223976e338aa7d09553b"},
+    {"path":"inputs/sofair/sofair_docs.jsonl","sha256":"31927ea0ed0014007bb858a91b09ac8a97053127d5b37d48db96d22fe4c3c597"},
+    {"path":"inputs/somesci/somesci_docs.jsonl","sha256":"f15d3306be29a692f0358e34fecf8c6f6826acbb89cb1ab8e77143e2c39bd77f"}
+  ],
+  "expected_summary": {"documents":8,"passages":33,"software_spans":38,"version_spans":8,"human_reviewed_passages":11,"agent_provisional_passages":22}
+}
