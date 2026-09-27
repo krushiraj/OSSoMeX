@@ -328,3 +328,125 @@ def test_loader_rejects_mismatched_parent_selection(monkeypatch, tmp_path):
     (output / 'manifest.json').write_bytes(json_bytes(report))
     with pytest.raises(ValueError, match='INVALID_SUPPLEMENTAL_SELECTION'):
         module.load_supplemental(output)
+
+
+def ecosystem_papers(monkeypatch, module, fake, cfg, papers):
+    responses = {}
+    for ordinal, (target, paper) in enumerate(papers.items(), 1):
+        project = f'https://papers.ecosyste.ms/api/v1/projects/verified-{target.lower()}'
+        cfg['ecosystems_projects'][target] = {'project_id': str(ordinal), 'url': project}
+        paper_url = 'https://papers.ecosyste.ms/api/v1/papers/' + paper['doi'].replace('/', '%2F')
+        responses.update({
+            project: {'id': ordinal, 'project_url': project, 'name': target},
+            project + '/mentions?per_page=20&page=1': [{'project_url': project, 'paper_url': paper_url}],
+            paper_url: paper,
+        })
+    def fetch(url, destination, policy):
+        if url not in responses:
+            return fake(url, destination, policy)
+        payload = json_bytes(responses[url])
+        write_once(destination, payload)
+        record = {'url': url, 'sha256': digest(payload), 'retrieved_at_utc': '2026-09-27T00:00:00Z'}
+        write_once(destination.with_name(destination.name + '.json'), json_bytes(record))
+        return record
+    monkeypatch.setattr(module, 'fetch_public', fetch)
+
+
+@pytest.mark.parametrize('reserved_alias', ['W1234567890', 'W9876543210'])
+def test_verified_ecosystem_openalex_alias_participates_in_exposure_matching(monkeypatch, tmp_path, reserved_alias):
+    fake = FakeFetch()
+    module, cfg, output = setup(monkeypatch, tmp_path, fake, [{'source_ids': {'openalex': reserved_alias}}])
+    alias = 'https://openalex.org/W1234567890'
+    ecosystem_papers(monkeypatch, module, fake, cfg, {'ImageJ': {'doi': '10.1000/p1', 'openalex_id': alias}})
+    report = module.collect_supplemental(cfg, output)
+    if reserved_alias == 'W1234567890':
+        assert report['paper_count'] == 0
+        excluded = next(row for row in read_jsonl(output / 'issues.jsonl') if row['code'] == 'EXCLUDED_OVERLAP')
+        assert any(row['role'] == 'diagnostic' and row['reason'] == 'identifier_overlap' for row in excluded['conflicts'])
+    else:
+        assert report['paper_count'] == 1
+        doc = module.load_supplemental(output)['documents'][0]
+        assert doc['source_ids']['openalex'] == alias
+        evidence = json.loads((output / doc['paper_metadata']['path']).read_bytes())
+        assert evidence['openalex_id'] == alias
+        assert digest((output / doc['paper_metadata']['path']).read_bytes()) == doc['paper_metadata']['sha256']
+
+
+def test_verified_ecosystem_openalex_alias_excludes_earlier_accepted_parent(monkeypatch, tmp_path):
+    fake = FakeFetch()
+    module, cfg, output = setup(monkeypatch, tmp_path, fake)
+    ecosystem_papers(monkeypatch, module, fake, cfg, {
+        'ImageJ': {'doi': '10.1000/p1', 'openalex_id': 'https://openalex.org/W1234567890'},
+        'GROMACS': {'doi': '10.1000/p2', 'openalex_id': 'W1234567890'},
+    })
+    report = module.collect_supplemental(cfg, output)
+    assert report['paper_count'] == 1 and report['targets']['GROMACS']['shortfall'] == 1
+    excluded = next(row for row in read_jsonl(output / 'issues.jsonl') if row['code'] == 'EXCLUDED_OVERLAP')
+    assert {'document_id': 'supplemental:10.1000/p1', 'reason': 'identifier_overlap'} in excluded['conflicts']
+
+
+def rehash_artifacts(output, report, replacements):
+    for name, payload in replacements.items():
+        (output / name).write_bytes(payload)
+        for record in report['files']:
+            if record['path'] == name:
+                record['sha256'] = digest(payload)
+    (output / 'manifest.json').write_bytes(json_bytes(report))
+
+
+@pytest.mark.parametrize('mutation', ['fragment', 'order', 'reason', 'context', 'random_count', 'signal_count', 'policy', 'paragraphs'])
+def test_loader_enforces_frozen_sentence_selection_even_when_rehashed(monkeypatch, tmp_path, mutation):
+    fake = FakeFetch([{'doi': '10.1000/p1'}])
+    module, cfg, output = setup(monkeypatch, tmp_path, fake)
+    report = module.collect_supplemental(cfg, output)
+    loaded = module.load_supplemental(output)
+    regions, selection = loaded['regions'], loaded['selection']
+    replacements = {}
+    if mutation == 'fragment':
+        regions[0]['annotation_region']['end'] = regions[0]['annotation_region']['start'] + 1
+        regions[0]['text'] = regions[0]['text'][:1]
+    elif mutation == 'order':
+        regions.reverse()
+    elif mutation == 'reason':
+        regions[0]['selection_reason'] = 'literal_name_candidate'
+    elif mutation == 'context':
+        regions[0]['context_span']['start'] -= 1
+        context = regions[0]['context_span']
+        regions[0]['context_text'] = loaded['documents'][0]['text'][context['start']:context['end']]
+    elif mutation in ('random_count', 'signal_count'):
+        key = 'random_passages' if mutation == 'random_count' else 'signal_passages'
+        selection[0][key] = {'requested': 3, 'accepted': 1, 'shortfall': 2}
+    elif mutation == 'policy':
+        policy = json.loads((output / 'selection-policy.json').read_bytes())
+        policy['seed'] = 7
+        replacements['selection-policy.json'] = json_bytes(policy)
+    elif mutation == 'paragraphs':
+        documents = loaded['documents']
+        documents[0]['paragraphs'][-1]['end'] = documents[0]['paragraphs'][-1]['start'] + 1
+        payload = ''.join(json.dumps(row) + '\n' for row in documents).encode()
+        inner = json.loads((output / 'bundle/manifest.json').read_bytes())
+        inner['files'][0]['sha256'] = digest(payload)
+        replacements.update({'bundle/documents.jsonl': payload, 'bundle/manifest.json': json_bytes(inner)})
+    replacements.update({
+        'regions.jsonl': ''.join(json.dumps(row) + '\n' for row in regions).encode(),
+        'selection.jsonl': ''.join(json.dumps(row) + '\n' for row in selection).encode(),
+    })
+    rehash_artifacts(output, report, replacements)
+    with pytest.raises(ValueError, match='SUPPLEMENTAL_(REGION|SELECTION|POLICY)'):
+        module.load_supplemental(output)
+
+
+def test_loader_preserves_valid_random_then_signal_selection(monkeypatch, tmp_path):
+    paragraphs = ['No target.', 'ImageJ used.', 'ImageJ version 1.2 used.', 'More text.',
+                  'ImageJ 2.0 used.', 'Other prose.', 'ImageJ described.', 'Last prose.']
+    raw = article(1).split(b'<body>')[0] + ('<body>' + ''.join(f'<p>{text}</p>' for text in paragraphs) + '</body></article>').encode()
+    fake = FakeFetch([{'doi': '10.1000/p1'}], overrides={1: raw})
+    module, cfg, output = setup(monkeypatch, tmp_path, fake)
+    module.collect_supplemental(cfg, output)
+    loaded = module.load_supplemental(output)
+    assert [row['text'] for row in loaded['regions']] == [
+        'ImageJ used.', 'No target.', 'Other prose.',
+        'ImageJ version 1.2 used.', 'ImageJ 2.0 used.', 'ImageJ described.',
+    ]
+    assert loaded['selection'][0]['random_passages'] == {'requested': 3, 'accepted': 3, 'shortfall': 0}
+    assert loaded['selection'][0]['signal_passages'] == {'requested': 3, 'accepted': 3, 'shortfall': 0}

@@ -200,6 +200,7 @@ def _publication_type(core, raw):
 
 def _resolve(candidate, frame, output):
     metadata = {}
+    aliases = {}
     if frame['discovery_source'] == 'ecosystems':
         project_url = frame['project']['url']
         if candidate.get('project_url') != project_url:
@@ -209,6 +210,8 @@ def _resolve(candidate, frame, output):
         paper, record = _fetch(component_url(API + '/papers', doi), output)
         if not isinstance(paper, dict) or _doi(paper.get('doi')) != doi:
             raise ValueError('PAPER_IDENTITY_MISMATCH')
+        if paper.get('openalex_id'):
+            aliases['openalex'] = paper['openalex_id']
         metadata = {'paper_metadata': record, 'association': deepcopy(candidate),
                     'project_metadata': frame['project_metadata']}
     else:
@@ -230,6 +233,7 @@ def _resolve(candidate, frame, output):
     source = frame['discovery_source']
     return validate_document({
         **parsed, 'document_id': 'supplemental:' + doi, 'source': source, 'discovery_source': source,
+        'source_ids': {**parsed['source_ids'], **aliases},
         'acquisition_arm': frame['acquisition_arm'], 'target': frame['target'],
         'source_record_id': doi, 'split': 'train', 'development_exposed': True, 'exposure_role': 'train_reserved',
         'public': True, 'native_split': None, 'annotation_status': 'unannotated',
@@ -376,6 +380,9 @@ def load_supplemental(bundle: Path) -> dict:
     if not isinstance(manifest, dict) or manifest.get('schema_version') != SCHEMA:
         raise ValueError('INVALID_SUPPLEMENTAL_MANIFEST')
     files = _verified_files(bundle, manifest)
+    policy = json.loads(files['selection-policy.json'].read_bytes())
+    if policy != SELECTION_POLICY:
+        raise ValueError('SUPPLEMENTAL_POLICY_MISMATCH')
     config = json.loads(files['config.json'].read_bytes())
     _validate_config(config)
     exposures = _load_exposures(config)
@@ -399,6 +406,31 @@ def load_supplemental(bundle: Path) -> dict:
         if (doc.get('text_license') != 'CC-BY-4.0' or doc.get('public') is not True
                 or doc.get('fulltext_eligible') is not False or doc.get('development_exposed') is not True):
             raise ValueError('INVALID_SUPPLEMENTAL_DOCUMENT')
+    expected_regions = []
+    selection_by_id = {row['document_id']: row for row in selection}
+    for doc in docs:
+        parsed = read_jats(verified_path(bundle, doc['raw_source']).read_bytes(),
+                           expected_doi=doc['source_ids']['doi'], expected_pmcid=doc['source_ids']['pmcid'])
+        if parsed['text'] != doc['text'] or parsed['paragraphs'] != doc.get('paragraphs'):
+            raise ValueError('SUPPLEMENTAL_REGION_SOURCE_MISMATCH')
+        if doc.get('acquisition_arm') == 'metadata' and doc.get('target') is None:
+            aliases = policy['targets']
+        elif doc.get('acquisition_arm') == 'targeted' and doc.get('target') in policy['targets']:
+            aliases = [doc['target']]
+        else:
+            raise ValueError('INVALID_SUPPLEMENTAL_SELECTION')
+        expected = select_passages({**parsed, 'document_id': doc['document_id'], 'text_revision': doc['text_revision']},
+                                   aliases=aliases, seed=policy['seed'],
+                                   random_count=policy['random_passages_per_parent'],
+                                   signal_count=policy['signal_passages_per_parent'])
+        expected_regions.extend(expected)
+        random_selected = sum(row['selection_reason'] == 'random_whole_passage' for row in expected)
+        selected = selection_by_id[doc['document_id']]
+        if (selected.get('random_passages') != _counts(3, random_selected)
+                or selected.get('signal_passages') != _counts(3, len(expected) - random_selected)):
+            raise ValueError('SUPPLEMENTAL_SELECTION_COUNT_MISMATCH')
+    if regions != expected_regions:
+        raise ValueError('SUPPLEMENTAL_REGION_SELECTION_MISMATCH')
     for row in regions:
         doc = by_id.get(row.get('document_id'))
         if not doc or row.get('text_revision') != doc['text_revision']:
