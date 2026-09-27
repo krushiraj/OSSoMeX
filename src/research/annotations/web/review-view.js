@@ -22,7 +22,7 @@ const queueReason = code => ({missing:'Needs a decision', unresolved:'Unresolved
 
 export const mountReviewView = (root, callbacks) => {
   let draft, summary, queue = [], session = {}, selection = null, returnFocus = null, taskKey = null;
-  let panel = null, restoreAfterAction = false;
+  let panel = null, restoreAfterAction = false, evidencePicker = null, selecting = false, recoveryState = '';
   const header = el('header', undefined, {class:'workspace-header'});
   const message = el('div', '', {id:'review-message', role:'alert'});
   const sessionStatus = el('p', '', {id:'session-status'});
@@ -47,11 +47,14 @@ export const mountReviewView = (root, callbacks) => {
   const relations = () => draft.view.annotation.alias_annotations?.relations || [];
   const byId = id => rows().find(row => row.mention_id === id);
   const active = () => byId(draft.activeMentionId);
-  const close = (restore = true) => {
+  const contextSnippet = span => `${slice(draft.view.task,{start:Math.max(draft.view.task.offset_base,span.start-24),end:span.start})}【${slice(draft.view.task,span)}】${slice(draft.view.task,{start:span.end,end:Math.min(draft.view.task.context_span.end,span.end+24)})}`;
+  const choiceName = row => rows().some(other=>other.name===row.name&&other.mention_id!==row.mention_id) ? `${row.name}: ${contextSnippet(row.name_span)}` : row.name;
+  const close = (restore = true, preserve = false) => {
     menu.hidden = true; panel?.remove(); panel = null;
+    if (!preserve) {selection=null;evidencePicker=null;paper.querySelector('.evidence-picker')?.remove();window.getSelection()?.removeAllRanges();}
     if (restore) (returnFocus?.isConnected && returnFocus.getClientRects().length ? returnFocus : passage).focus({preventScroll:true});
   };
-  const clearSelection = () => { selection = null; close(false); window.getSelection()?.removeAllRanges(); };
+  const clearSelection = () => close(false);
   const send = action => { if (locked()) return; restoreAfterAction=true;close(false);callbacks.onAction(action); };
   const focusCard = (id, field) => {
     const card = [...cards.querySelectorAll('article')].find(node => node.dataset.mentionId === id);
@@ -63,11 +66,16 @@ export const mountReviewView = (root, callbacks) => {
   };
   const place = node => {
     const rect = selection?.rect || returnFocus?.getBoundingClientRect() || passage.getBoundingClientRect();
-    const pos = positionPopover(rect, {width:innerWidth,height:innerHeight}, node.getBoundingClientRect());
+    const ceiling=Math.max(8,Math.min(summaryNode.getBoundingClientRect().bottom+8,innerHeight/3));
+    const floor=Math.min(innerHeight-8,footer.getBoundingClientRect().top-8);
+    const below=floor-rect.bottom-16, above=rect.top-ceiling-16;
+    node.style.maxHeight=`${Math.max(100,Math.max(below,above))}px`;
+    const pos = positionPopover(rect, {width:innerWidth,height:floor}, node.getBoundingClientRect());
     node.style.left = `${pos.left}px`; node.style.top = `${pos.top}px`;
   };
   const openPanel = heading => {
-    close(false); returnFocus = document.activeElement;
+    const origin=document.activeElement;
+    close(false,true); if(!origin?.closest('.popover'))returnFocus=origin;
     panel = el('section', undefined, {class:'popover', role:'dialog', 'aria-label':heading});
     panel.append(el('h2',heading), button('×',()=>close(),{class:'close','aria-label':'Close'}));
     root.append(panel);
@@ -85,17 +93,27 @@ export const mountReviewView = (root, callbacks) => {
   const reasonControls = (node, options) => {
     const label = el('label','Correction reason');
     const select = el('select',undefined,{'aria-label':'Correction reason'});
+    select.append(el('option','Choose a reason',{value:''}));
     for (const [code,text] of [...options,['other','Other']]) select.append(el('option',text,{value:code}));
     const noteLabel = el('label','Optional note'); const note = el('textarea', '', {'aria-label':'Optional note', rows:'2'});
     noteLabel.append(note); label.append(select); node.append(label,noteLabel);
     select.addEventListener('change',()=>{note.required=select.value==='other';noteLabel.firstChild.textContent=note.required?'Note required for Other':'Optional note';});
     return () => {
+      if (!select.value) {select.setCustomValidity('Choose a reason.');select.reportValidity();return null;}
+      select.setCustomValidity('');
       if (select.value==='other' && !note.value.trim()) { note.setCustomValidity('Describe the other reason.');note.reportValidity();return null; }
       note.setCustomValidity(''); return {reasonCode:select.value,...(note.value.trim()?{note:note.value.trim()}:{})};
     };
   };
-  const openField = (row, field) => {
+  const uncertainty = action => {
+    const node=openPanel('Leave unresolved');
+    const reason=reasonControls(node,[['insufficient_evidence','Insufficient evidence'],['ambiguous_referent','Ambiguous referent']]);
+    node.append(button('Stage unresolved',()=>{const why=reason();if(why)send({...action,...why});}),button('Cancel',()=>close()));ready(node);
+  };
+  const unresolvedButton = (node,label,action) => {const b=button(label,()=>uncertainty(action));b.disabled=locked();node.append(b);};
+  const openField = (row, field, useSelection = false) => {
     if (!row) return;
+    if(!useSelection)selection=null;
     const node = openPanel(`${title(field)} for ${row.name}`);
     const currentField = field==='intents' ? 'used' : field;
     if (field==='software') { openName(row); return; }
@@ -106,20 +124,20 @@ export const mountReviewView = (root, callbacks) => {
       }
       if (selection) actionButton(node,`Link selected version to ${row.name}`,{type:'link_version',mentionId:row.mention_id,span:selection});
       actionButton(node,'No version expressed',{type:'set_field',mentionId:row.mention_id,field:'versions',value:{status:'absent',links:[]}});
-      actionButton(node,'Version unresolved',{type:'set_field',mentionId:row.mention_id,field:'versions',value:{status:'ambiguous',links:row.version_links}});
+      unresolvedButton(node,'Version unresolved',{type:'set_field',mentionId:row.mention_id,field:'versions',value:{status:'ambiguous',links:row.version_links}});
     } else {
       const evidenceField = field==='sentiment'?'sentiment':'intents';
       const evidence = selection ? [{start:selection.start,end:selection.end}] : row.evidence[evidenceField];
       node.append(el('p',selection?'Selected evidence:':'Current evidence:',{class:'muted'})); evidencePreview(node,evidence);
       if (field==='sentiment') {
         for (const value of ['positive','negative','mixed','not_expressed']) actionButton(node,value==='not_expressed'?'No sentiment expressed':title(value),{type:'set_field',mentionId:row.mention_id,field,value,evidence},value!=='not_expressed'&&!evidence.length);
-        actionButton(node,'Unknown sentiment',{type:'set_field',mentionId:row.mention_id,field,value:null});
+        unresolvedButton(node,'Unknown sentiment',{type:'set_field',mentionId:row.mention_id,field,value:null});
       } else {
         const bits = field==='intents'?['created','used','shared']:[field];
         for (const bit of bits) {
           actionButton(node,`Set ${title(bit)}`,{type:'set_field',mentionId:row.mention_id,field:bit,value:true,evidence},!evidence.length);
           actionButton(node,`Not ${bit}`,{type:'set_field',mentionId:row.mention_id,field:bit,value:false});
-          actionButton(node,`${title(bit)} unresolved`,{type:'set_field',mentionId:row.mention_id,field:bit,value:null});
+          unresolvedButton(node,`${title(bit)} unresolved`,{type:'set_field',mentionId:row.mention_id,field:bit,value:null});
         }
         actionButton(node,'Mentioned only',{type:'set_field',mentionId:row.mention_id,field:'intents',value:'mentioned'});
       }
@@ -151,47 +169,84 @@ export const mountReviewView = (root, callbacks) => {
   const chooseTarget = (heading, apply) => {
     const node = openPanel(heading);
     node.append(el('p','Choose the software name this action applies to.'));
-    for (const row of rows()) node.append(button(row.name,()=>apply(row)));
+    for (const row of rows()) node.append(button(choiceName(row),()=>apply(row)));
     if (!rows().length) node.append(el('p','Identify a software name first.'));
     ready(node);
   };
   const withTarget = (heading, apply) => active()?apply(active()):chooseTarget(heading,apply);
-  const aliasPanel = target => {
-    if (!selection) return;
-    const captured = structuredClone(selection);
+  const pickEvidence = resume => {
+    close(false);window.getSelection()?.removeAllRanges();evidencePicker=resume;
+    const prompt=el('div',undefined,{class:'evidence-picker',role:'status'});
+    prompt.append(el('p','Select the defining phrase in the passage. The name and relation are not staged until you confirm.'),button('Cancel evidence selection',()=>close()));
+    paper.append(prompt);passage.focus();passage.scrollIntoView({block:'center'});
+  };
+  const evidenceControls = (node, spans, accepted, acceptEvidence, replaceEvidence) => {
+    node.append(el('p','Relationship evidence:'));evidencePreview(node,spans);
+    const accept=button(accepted?'Displayed evidence selected':'Use displayed evidence',()=>{acceptEvidence();accept.textContent='Displayed evidence selected';});
+    node.append(accept,button('Select different evidence',replaceEvidence));
+  };
+  const preferredDefault = (kind, first, second) => {
+    if(kind==='abbreviation') {
+      const acronym = [first,second].filter(row=>/^[\p{Lu}\d][\p{Lu}\d.-]*$/u.test(row.name));
+      if(acronym.length===1)return acronym[0].mention_id;
+      return '';
+    }
+    return first.name_span.start<second.name_span.start?first.mention_id:second.mention_id;
+  };
+  const aliasPanel = (target, pending = null) => {
+    if (!selection && !pending) return;
+    const captured = pending?.captured || structuredClone(selection);
     let selectedId;
     try { selectedId=mentionIdForSpan(draft.view.task,captured); } catch { showError('Select a software name inside the owned passage region.');return; }
     const node = openPanel(`Link ${captured.text} as an alias`);
     const label = el('label','Target member'); const member = el('select',undefined,{'aria-label':'Target member'});
-    for (const row of rows().filter(r=>r.mention_id!==selectedId)) member.append(el('option',row.name,{value:row.mention_id}));
+    for (const row of rows().filter(r=>r.mention_id!==selectedId)) member.append(el('option',choiceName(row),{value:row.mention_id}));
     if (target && target.mention_id!==selectedId) member.value=target.mention_id;
+    if(pending)member.value=pending.member;
     label.append(member);node.append(label);
     const kindLabel = el('label','Relation type'); const kind=el('select',undefined,{'aria-label':'Relation type'});
     kind.append(el('option','Abbreviation',{value:'abbreviation'}),el('option','Explicit alternative name',{value:'explicit_alternative_name'}));kindLabel.append(kind);node.append(kindLabel);
+    if(pending)kind.value=pending.kind;
     const prefLabel=el('label','Preferred name');const pref=el('select',undefined,{'aria-label':'Preferred name'});prefLabel.append(pref);node.append(prefLabel);
-    const updatePref=()=>{pref.replaceChildren(el('option',byId(member.value)?.name || 'Choose target',{value:member.value}),el('option',captured.text,{value:selectedId}));}; updatePref();member.addEventListener('change',updatePref);
-    const evidence = {start:draft.view.task.context_span.start,end:draft.view.task.context_span.end};
-    node.append(el('p','Suggested relationship evidence:'));evidencePreview(node,[evidence]);
+    const selected={name:captured.text,mention_id:selectedId,name_span:captured};
+    const updatePref=()=>{const other=byId(member.value);pref.replaceChildren(el('option','Choose preferred name',{value:''}),el('option',other?choiceName(other):'Choose target',{value:member.value}),el('option',choiceName(selected),{value:selectedId}));pref.value=other?preferredDefault(kind.value,other,selected):'';};
+    updatePref();if(pending)pref.value=pending.pref;
+    const other=byId(member.value);
+    const spans=pending?.spans||[{start:Math.min(captured.start,other?.name_span.start??captured.start),end:Math.max(captured.end,other?.name_span.end??captured.end)}];
     let accepted=false;
-    const accept=button('Use displayed evidence',()=>{accepted=true;accept.textContent='Displayed evidence selected';stage.disabled=locked()||!member.value;});node.append(accept);
-    const stage=button('Stage alias link',()=>{if(accepted)send({type:'link_alias',span:captured,targetMentionId:member.value,relationType:kind.value,preferredMentionId:pref.value,evidence:[evidence]});});stage.disabled=true;node.append(stage,button('Cancel',()=>close()));ready(node);
+    const stage=button('Stage alias link',()=>{if(accepted)send({type:'link_alias',span:captured,targetMentionId:member.value,relationType:kind.value,preferredMentionId:pref.value,evidence:spans});});
+    const updateStage=()=>stage.disabled=locked()||!accepted||!member.value||!pref.value;
+    member.addEventListener('change',()=>{
+      const targetRow=byId(member.value);if(!targetRow)return;
+      aliasPanel(null,{captured,member:member.value,kind:kind.value,pref:preferredDefault(kind.value,targetRow,selected),spans:[{start:Math.min(captured.start,targetRow.name_span.start),end:Math.max(captured.end,targetRow.name_span.end)}]});
+    });kind.addEventListener('change',()=>{updatePref();updateStage();});pref.addEventListener('change',updateStage);
+    evidenceControls(node,spans,false,()=>{accepted=true;updateStage();},()=>{
+      const state={captured,member:member.value,kind:kind.value,pref:pref.value};
+      pickEvidence(range=>aliasPanel(null,{...state,spans:[{start:range.start,end:range.end}]}));
+    });
+    updateStage();node.append(stage,button('Cancel',()=>close()));ready(node);
   };
-  const relationPanel = rel => {
+  const relationPanel = (rel, pending = null) => {
     const node = openPanel(`Name relation: ${rel.member_mention_ids.map(id=>byId(id)?.name).join(' / ')}`);
-    evidencePreview(node,rel.evidence_spans);
+    const spans=pending?.spans||rel.evidence_spans;
     const kindLabel=el('label','Relation type');const kind=el('select',undefined,{'aria-label':'Relation type'});
-    kind.append(el('option','Abbreviation',{value:'abbreviation'}),el('option','Explicit alternative name',{value:'explicit_alternative_name'}));kind.value=rel.relation_type;kindLabel.append(kind);node.append(kindLabel);
+    kind.append(el('option','Abbreviation',{value:'abbreviation'}),el('option','Explicit alternative name',{value:'explicit_alternative_name'}));kind.value=pending?.kind||rel.relation_type;kindLabel.append(kind);node.append(kindLabel);
     const label=el('label','Preferred name');const pref=el('select',undefined,{'aria-label':'Preferred name'});
-    for (const id of rel.member_mention_ids) pref.append(el('option',byId(id)?.name,{value:id}));pref.value=rel.preferred_mention_id||rel.member_mention_ids[0];label.append(pref);node.append(label);
-    const edit=decision=>({type:'edit_alias',relationId:rel.relation_id,value:{...rel,relation_type:kind.value,decision,preferred_mention_id:decision==='alias'?pref.value:null}});
-    actionButton(node,'Confirm alias',()=>edit('alias'));
+    for (const id of rel.member_mention_ids) pref.append(el('option',choiceName(byId(id)),{value:id}));pref.value=pending?.pref||rel.preferred_mention_id||rel.member_mention_ids[0];label.append(pref);node.append(label);
+    const edit=decision=>({type:'edit_alias',relationId:rel.relation_id,value:{...rel,relation_type:kind.value,decision,evidence_spans:spans,preferred_mention_id:decision==='alias'?pref.value:null}});
+    let confirmed=!pending;
+    evidenceControls(node,spans,confirmed,()=>{confirmed=true;confirm.disabled=locked();},()=>{
+      const state={kind:kind.value,pref:pref.value};pickEvidence(range=>relationPanel(rel,{...state,spans:[{start:range.start,end:range.end}]}));
+    });
+    const confirm=actionButton(node,'Confirm alias',()=>edit('alias'),!confirmed);
     actionButton(node,'Checked: not an alias',()=>({...edit('not_alias'),reasonCode:'wrong_software_link'}));
-    actionButton(node,'Relation unresolved',()=>({...edit('unresolved'),reasonCode:'ambiguous_referent'}));
+    const unresolved=button('Relation unresolved',()=>uncertainty(edit('unresolved')));unresolved.disabled=locked();node.append(unresolved);
     actionButton(node,'Remove relationship',{type:'remove_alias',relationId:rel.relation_id});ready(node);
   };
   const showSelection = range => {
-    if (!draft || !range || range.taskId!==draft.view.task.task_id || range.textRevision!==draft.view.task.text_revision) {clearSelection();return;}
-    selection=structuredClone(range);close(false);returnFocus=passage;
+    if (!draft || locked() || !range || range.taskId!==draft.view.task.task_id || range.textRevision!==draft.view.task.text_revision) {clearSelection();return;}
+    if(evidencePicker){const resume=evidencePicker;close(false);returnFocus=passage;resume(range);return;}
+    close(false,true);selection=structuredClone(range);returnFocus=passage;
     menu.replaceChildren(el('h2',`“${range.text}”`),button('×',()=>{clearSelection();passage.focus();},{class:'close','aria-label':'Close selection'}));
     const exact=rows().find(row=>row.name_span.start===range.start&&row.name_span.end===range.end);
     if (exact) {
@@ -201,27 +256,55 @@ export const mountReviewView = (root, callbacks) => {
     for (const finding of draft.reconciliation) actionButton(menu,`Correct discovery “${finding.text}” with selection`,{type:'change_name_span',mentionId:finding.mentionId,span:selection});
     if (draft.revealed) {
       const target=exact||active();
+      if(target) {
+        const evidence=[{start:range.start,end:range.end}];
+        for(const bit of ['used','created','shared'])actionButton(menu,`Mark ${bit} for ${target.name}`,{type:'set_field',mentionId:target.mention_id,field:bit,value:true,evidence});
+        for(const value of ['positive','negative','mixed'])actionButton(menu,`Sentiment ${value} for ${target.name}`,{type:'set_field',mentionId:target.mention_id,field:'sentiment',value,evidence});
+      }
       menu.append(button(target?`Link version to ${target.name}`:'Link version…',()=>withTarget('Link version to software',row=>send({type:'link_version',mentionId:row.mention_id,span:selection}))));
-      menu.append(button(target?`Attach intent evidence to ${target.name}`:'Attach intent evidence…',()=>withTarget('Intent evidence for software',row=>openField(row,'intents'))));
-      menu.append(button(target?`Attach sentiment evidence to ${target.name}`:'Attach sentiment evidence…',()=>withTarget('Sentiment evidence for software',row=>openField(row,'sentiment'))));
+      menu.append(button(target?`Attach intent evidence to ${target.name}`:'Attach intent evidence…',()=>withTarget('Intent evidence for software',row=>openField(row,'intents',true))));
+      menu.append(button(target?`Attach sentiment evidence to ${target.name}`:'Attach sentiment evidence…',()=>withTarget('Sentiment evidence for software',row=>openField(row,'sentiment',true))));
       menu.append(button('Link alias…',()=>aliasPanel(target)));
     }
     menu.hidden=false;place(menu);
   };
-  const capture = () => { if(!draft)return;const value=capturePassageSelection(passage,draft.view.task);if(value)showSelection(value); };
-  passage.addEventListener('mouseup',capture);passage.addEventListener('keyup',event=>{if(event.key!=='Escape')capture();});
+  const capture = () => {
+    if(!draft||locked())return;
+    const value=capturePassageSelection(passage,draft.view.task);
+    if(value && selection && !menu.hidden && value.start===selection.start&&value.end===selection.end)return;
+    if(value)showSelection(value);else if(!evidencePicker)close(false);
+  };
+  const fallback=button('Actions for selection',()=>{capture();if(!menu.hidden)menu.querySelector('button:not(.close)')?.focus();else showError('Select passage text first.');});
+  paper.append(fallback);
+  const endSelection=()=>{const started=selecting;selecting=false;if(!panel||started)capture();};
+  passage.addEventListener('pointerdown',()=>{selecting=true;if(!evidencePicker)close(false);selection=null;menu.hidden=true;});
+  passage.addEventListener('mouseup',endSelection);passage.addEventListener('touchend',endSelection);
+  passage.addEventListener('keyup',event=>{if(event.key!=='Escape'&&event.key!=='Tab')capture();});
+  const selectionChanged=()=>{
+    if(selecting||panel||!draft||locked())return;
+    const value=capturePassageSelection(passage,draft.view.task);
+    if(value)capture();
+  };
+  document.addEventListener('selectionchange',selectionChanged);
+  const dismissOutside=event=>{
+    if(event.target.closest('.popover')||passage.contains(event.target)||event.target===fallback||event.target.closest('.evidence-picker'))return;
+    close(false);window.getSelection()?.removeAllRanges();
+  };
+  root.addEventListener('pointerdown',dismissOutside);
   const onKey = event => {
-    if(event.key==='Escape' && (selection || panel || !menu.hidden)){event.preventDefault();selection=null;window.getSelection()?.removeAllRanges();close();}
+    if(event.key==='Escape' && (selection || panel || evidencePicker || !menu.hidden)){event.preventDefault();window.getSelection()?.removeAllRanges();close();}
     if(event.key==='Tab' && !event.shiftKey && !menu.hidden && passage.contains(document.activeElement)){event.preventDefault();menu.querySelector('button:not(.close):not(:disabled)')?.focus();}
     if(event.key==='Tab' && panel){const focusable=[...panel.querySelectorAll('button:not(:disabled),select,textarea,input')];const first=focusable[0],last=focusable.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}}
   };
-  root.addEventListener('keydown',onKey);
+  document.addEventListener('keydown',onKey);
   const keepFocusVisible = event => {
     const target=event.target;
     if (!(target instanceof HTMLElement) || target.closest('.popover, #review-footer')) return;
     requestAnimationFrame(()=>{
       if(!target.isConnected)return;
-      const box=target.getBoundingClientRect(), foot=footer.getBoundingClientRect(), head=header.getBoundingClientRect();
+      if(recoveryState&&!sessionChoices.contains(target))return;
+      const box=target.getBoundingClientRect(), foot=footer.getBoundingClientRect(), head=summaryNode.getBoundingClientRect();
+      if(sessionChoices.contains(target)){target.scrollIntoView({block:'center'});return;}
       if(box.bottom>foot.top-12)window.scrollBy(0,box.bottom-foot.top+16);
       else if(box.top<head.bottom+8)window.scrollBy(0,box.top-head.bottom-12);
     });
@@ -247,8 +330,18 @@ export const mountReviewView = (root, callbacks) => {
     for(const [index,item] of queue.entries()){const id=item.task_id||item.task?.task_id;const identity=item.document_id||item.task?.document_id||item.title||`Passage ${index+1}`;const b=button('',()=>{clearSelection();callbacks.onNavigate(id);},{'aria-current':String(id===draft?.view.task.task_id),'aria-label':`Open passage ${index+1}: ${identity}`});b.disabled=Boolean(locked());b.append(el('span',identity),el('small',queueReason(item.review_summary?.workflow_status||item.workflow_status||item.reason)));list.append(b);}details.append(list);sidebar.append(details);
   };
   const render = (next, ignoredSummary, nextQueue=[], nextSession={}) => {
+    const previousRecovery=recoveryState;
+    const recoveryFocused=sessionChoices.contains(document.activeElement);
+    const focusedChoice=document.activeElement?.textContent;
     queue=Array.isArray(nextQueue)?nextQueue:nextQueue.items||[];session=nextSession;
+    recoveryState=session.dirtyNavigation?'dirty':session.uncertainRequest?'uncertain':session.committedReload?'committed':session.conflict?(session.conflict.reviewed?'reviewed':'conflict'):'';
+    if(recoveryState)clearSelection();
     renderSession();
+    if(recoveryState!==previousRecovery||recoveryFocused)requestAnimationFrame(()=>{
+      const control=[...sessionChoices.querySelectorAll('button:not(:disabled)')].find(node=>recoveryFocused&&node.textContent===focusedChoice)||sessionChoices.querySelector('button:not(:disabled)');
+      if(recoveryState&&control){control.focus({preventScroll:true});control.scrollIntoView({block:'center'});}
+      else if(previousRecovery&&!recoveryState&&draft){passage.focus();passage.scrollIntoView({block:'center'});}
+    });
     if(!next){
       clearSelection();taskKey=null;draft=null;restoreAfterAction=false;
       header.replaceChildren(el('h1','Software annotation review'),button('Export',()=>callbacks.onExport()));
@@ -257,7 +350,7 @@ export const mountReviewView = (root, callbacks) => {
       const progress=session.reviewProgress;
       if(progress)summaryNode.append(el('p',`${progress.approved||0} approved of ${progress.total||0}. ${progress.pending||0} pending, ${progress.in_progress||0} in progress, ${progress.source_issue||0} source issues.`));
       if(session.finished)summaryNode.append(el('p','Use the queue or filters to revisit remaining passages.',{class:'muted'}));
-      reading.hidden=true;passage.replaceChildren();cards.replaceChildren();extras.replaceChildren();footer.replaceChildren();
+      reading.hidden=true;passage.replaceChildren();delete passage.dataset.renderKey;cards.replaceChildren();extras.replaceChildren();footer.replaceChildren();
       const controls=el('div',undefined,{class:'toolbar'});for(const label of ['Save','Save & next','Approve & next']){const b=button(label,()=>{});b.disabled=true;controls.append(b);}footer.append(controls,el('p','Choose a passage to continue.',{class:'footer-note'}));return;
     }
     reading.hidden=false;
@@ -272,6 +365,7 @@ export const mountReviewView = (root, callbacks) => {
     showError(session.error||'');
     renderQueue();
     summaryNode.replaceChildren();
+    if(draft.dirty)summaryNode.append(el('small','In this draft'));
     const counts=el('div',undefined,{class:'summary-counts'});
     const countButton=(label,handler)=>counts.append(button(label,handler));
     countButton(`${summary.counts.mentions} software name${summary.counts.mentions===1?'':'s'}`,()=>{if(rows()[0])focusCard(rows()[0].mention_id);else passage.focus();});
@@ -281,7 +375,7 @@ export const mountReviewView = (root, callbacks) => {
       :summary.source_issues.length?'Source issue: repair needed before approval.'
       :summary.workflow_status==='approved'?(summary.partial_source_coverage?'Labels and name check approved; partial source coverage remains.':'Labels and name check approved.')
       :summary.needs_decisions?`${summary.needs_decisions} decision${summary.needs_decisions===1?'':'s'} needed`
-      :!rows().length?'No software names displayed; check for missed names.'
+      :!rows().length?'No software mentions proposed; check for missed names.'
       :!summary.proposals_to_confirm?(summary.name_audit==='confirmed'?'Displayed labels and name check confirmed.':'Displayed labels confirmed; check for missed names.')
       :'All displayed labels filled; check for missed names.';
     summaryNode.append(el('p',summaryMessage));
@@ -290,7 +384,7 @@ export const mountReviewView = (root, callbacks) => {
     if(summary.partial_source_coverage)summaryNode.append(el('small','Partial source coverage. Displayed labels do not establish complete extraction.'));
     if(!draft.revealed)actionButton(summaryNode,'Show proposed labels',{type:'reveal'});
     passage.dataset.taskId=draft.view.task.task_id;passage.dataset.textRevision=draft.view.task.text_revision;
-    passage.replaceChildren();let cursor=draft.view.task.offset_base;
+    let cursor=draft.view.task.offset_base;
     const sourceEnd=draft.view.task.offset_base+Array.from(draft.view.task.text).length;
     const owned=draft.view.task.annotation_region;
     paper.querySelector('.source-identity').textContent=`Document: ${draft.view.task.document_id}`;
@@ -305,17 +399,24 @@ export const mountReviewView = (root, callbacks) => {
         passage.append(a<owned.start||a>=owned.end?el('span',text,{class:'source-context'}):document.createTextNode(text));
       }
     };
-    for(const row of [...rows()].sort((a,b)=>a.name_span.start-b.name_span.start)){
-      appendSource(cursor,row.name_span.start);
-      const mark=el('mark',slice(draft.view.task,row.name_span),{tabindex:'0',role:'button','aria-label':`Review ${row.name}`,'data-active':String(row.mention_id===draft.activeMentionId)});
-      mark.addEventListener('click',()=>{if(!window.getSelection()?.toString())focusCard(row.mention_id);});mark.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();focusCard(row.mention_id);}});passage.append(mark);cursor=row.name_span.end;
-    }appendSource(cursor,sourceEnd);
+    const sourceKey=JSON.stringify([key,rows().map(row=>[row.mention_id,row.name_span])]);
+    if(passage.dataset.renderKey!==sourceKey){
+      passage.replaceChildren();
+      for(const row of [...rows()].sort((a,b)=>a.name_span.start-b.name_span.start)){
+        appendSource(cursor,row.name_span.start);
+        const mark=el('mark',slice(draft.view.task,row.name_span),{tabindex:'0',role:'button','aria-label':`Review ${row.name}`,'data-mention-id':row.mention_id,'data-active':String(row.mention_id===draft.activeMentionId)});
+        mark.addEventListener('click',()=>{if(!window.getSelection()?.toString())focusCard(row.mention_id);});mark.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();focusCard(row.mention_id);}});passage.append(mark);cursor=row.name_span.end;
+      }
+      appendSource(cursor,sourceEnd);passage.dataset.renderKey=sourceKey;
+    }
+    for(const mark of passage.querySelectorAll('mark'))mark.dataset.active=String(mark.dataset.mentionId===draft.activeMentionId);
     cards.replaceChildren(el('h2','Software labels'));
-    if(!rows().length)cards.append(el('p',draft.revealed?'No software names displayed. Select a missed name in the passage.':'Select names in the passage to record your discoveries.',{class:'muted'}));
+    if(!rows().length)cards.append(el('p',draft.revealed?'No software mentions proposed. Select a missed name in the passage.':'Select names in the passage to record your discoveries.',{class:'muted'}));
     for(const row of rows()){
       const card=el('article',undefined,{class:'software-card',tabindex:'-1','data-mention-id':row.mention_id,'data-active':String(row.mention_id===draft.activeMentionId),'aria-label':`Labels for ${row.name}`});
       const states=summary.fields[row.mention_id]||{};
       card.append(button(row.name,()=>focusCard(row.mention_id),{class:'name-button'}),el('span',stateText(states.software),{class:'state'}));
+      card.append(el('p',contextSnippet(row.name_span),{class:'occurrence-context'}));
       const pillRow=(label,items)=>{const group=el('div',undefined,{class:'label-row'});group.append(el('small',label));const pills=el('div',undefined,{class:'pills'});for(const [text,field,labelKey] of items){const b=button(text,()=>openField(row,field),{class:'pill','data-label':labelKey||field,'data-state':states[field]?.state||'missing'});b.disabled=!draft.revealed;pills.append(b,el('span',stateText(states[field]),{class:'state'}));}group.append(pills);card.append(group);};
       const intents=[];
       if(row.intents?.includes('mentioned'))intents.push(['Mentioned','used','mentioned']);
@@ -329,6 +430,10 @@ export const mountReviewView = (root, callbacks) => {
       const actions=el('div',undefined,{class:'card-actions'});actions.append(button('Correct name',()=>openName(row)));card.append(actions);cards.append(card);
     }
     extras.replaceChildren();
+    const noteButton=button('Add review note',()=>{
+      const node=openPanel('Review note');const label=el('label','Review note');const note=el('textarea','',{'aria-label':'Review note',rows:'3'});label.append(note);node.append(label);
+      node.append(button('Stage note',()=>{if(!note.value.trim()){note.setCustomValidity('Write a note before staging it.');note.reportValidity();return;}send({type:'record_note',note:note.value.trim()});}),button('Cancel',()=>close()));ready(node);
+    });noteButton.disabled=locked();extras.append(noteButton);
     const groups=aliasGroupsForDraft(draft);if(groups.length||relations().length){const section=el('section',undefined,{class:'alias-groups',tabindex:'-1','aria-label':'Alias groups'});section.append(el('h2','Aliases'));
       for(const group of groups){const block=el('div');block.append(el('p',group.members.map(id=>byId(id)?.name).join(' / ')),el('small',group.conflict?'Preferred name needs a decision':`Preferred name: ${group.preferredName}`));section.append(block);}
       for(const rel of relations())section.append(button(`${rel.member_mention_ids.map(id=>byId(id)?.name).join(' / ')}: ${rel.decision==='not_alias'?'Checked non-alias':rel.decision==='unresolved'?'Unresolved relation':'Alias'} (${stateText(summary.relations[rel.relation_id])})`,()=>relationPanel(rel)));extras.append(section);}
@@ -351,11 +456,15 @@ export const mountReviewView = (root, callbacks) => {
     const destination=queue[nextIndex]?.task_id||queue[nextIndex]?.task?.task_id||null;
     const previous=button('Previous',()=>callbacks.onNavigate('previous'));previous.disabled=Boolean(locked())||nextIndex<2;controls.append(previous);
     const blocker=readOnly()?'Read-only review':session.saving?'Saving…':session.busy?'Loading…':session.uncertainRequest?'Resolve the pending save before continuing.':session.conflict?'Reload or resolve the conflicting revision.':session.committedReload?'Reload the saved passage before continuing.':session.dirtyNavigation?'Choose what to do with unsaved changes.':draft.reconciliation.length?'Resolve overlapping discoveries before saving.':!draft.revealed&&draft.blindFindings.length?'Reveal proposals to reconcile discoveries.':'';
-    for(const [label,completion,dest] of [['Save','save',null],['Save & next','save',destination],['Approve & next','approve',destination]]){const b=button(label,()=>callbacks.onSave(completion,dest,...(label==='Save'?[]:[{advance:true}])),{class:completion==='approve'?'primary':'',...(completion==='approve'?{'aria-describedby':'approval-scope'}:{})});b.disabled=Boolean(blocker)||(completion==='approve'&&(!draft.revealed||!summary.can_approve))||(label==='Save'&&!draft.dirty);controls.append(b);}
+    const approvalLabel=draft.revealed&&!rows().length&&!summary.source_issues.length?'Approve no software & next':'Approve & next';
+    for(const [label,completion,dest] of [['Save','save',null],['Save & next','save',destination],[approvalLabel,'approve',destination]]){const b=button(label,()=>callbacks.onSave(completion,dest,...(label==='Save'?[]:[{advance:true}])),{class:completion==='approve'?'primary':'',...(completion==='approve'?{'aria-describedby':'approval-scope'}:{})});b.disabled=Boolean(blocker)||(completion==='approve'&&(!draft.revealed||!summary.can_approve))||(label==='Save'&&!draft.dirty);controls.append(b);}
     footer.append(controls,el('p',blocker||(!draft.revealed?'Reveal proposals before approval.':!summary.can_approve?'Resolve unknown labels and source issues before approval.':draft.dirty?'Unsaved changes. Approval also confirms the name audit.':'Approval confirms displayed labels and the name audit.'),{class:'footer-note'}));
-    footer.append(button('Approval scope',()=>{const node=openPanel('Approval scope');node.append(el('p','Approve confirms all displayed software names, versions, intent, sentiment and alias decisions, including unchanged proposals. It also records that you checked for missed software names inside the owned region. Surrounding context is evidence only and is not included in the name audit.',{id:'approval-scope-expanded'}));ready(node);},{'aria-describedby':'approval-scope'}),el('span','Approve confirms all displayed software names, versions, intent, sentiment and alias decisions, including unchanged proposals, and a missed-name check in the owned region only. Surrounding context is excluded from the name audit.',{id:'approval-scope',class:'visually-hidden'}));
-    if(focusedCard){const node=[...cards.querySelectorAll('article')].find(n=>n.dataset.mentionId===focusedCard);node?.focus({preventScroll:true});}
-    if(restoreAfterAction){restoreAfterAction=false;const node=[...cards.querySelectorAll('article')].find(n=>n.dataset.mentionId===draft.activeMentionId);(node||passage).focus({preventScroll:true});}
+    const unsavedCount=draft.operations.length+(draft.revealed?draft.reconciliation.length:draft.blindFindings.length);
+    if(draft.dirty)footer.append(el('p',`${unsavedCount} unsaved change${unsavedCount===1?'':'s'}`,{class:'unsaved-count',role:'status'}));
+    footer.append(button('Approval scope',()=>{const node=openPanel('Approval scope');node.append(el('p','Approve confirms all displayed software names, versions, intent, sentiment and alias decisions, including unchanged proposals. It also records that you checked for missed software names inside the owned region. Surrounding context is evidence only and is not included in the name audit.',{id:'approval-scope-expanded'}));ready(node);},{'aria-describedby':'approval-scope'}),el('p','Approves all displayed names, versions, intent, sentiment and alias decisions, including unchanged proposals, and confirms you checked the review region for missing software names. Surrounding context is not a reviewed region.',{id:'approval-scope'}));
+    fallback.disabled=locked();
+    if(focusedCard&&!recoveryState){const node=[...cards.querySelectorAll('article')].find(n=>n.dataset.mentionId===focusedCard);node?.focus({preventScroll:true});}
+    if(restoreAfterAction){restoreAfterAction=false;if(!recoveryState){const node=[...cards.querySelectorAll('article')].find(n=>n.dataset.mentionId===draft.activeMentionId);(node||passage).focus({preventScroll:true});}}
   };
-  return {render,showSelection,clearSelection,showError,destroy:()=>{root.removeEventListener('keydown',onKey);root.removeEventListener('focusin',keepFocusVisible);clearSelection();root.replaceChildren();}};
+  return {render,showSelection,clearSelection,showError,destroy:()=>{document.removeEventListener('keydown',onKey);root.removeEventListener('focusin',keepFocusVisible);root.removeEventListener('pointerdown',dismissOutside);document.removeEventListener('selectionchange',selectionChanged);clearSelection();root.replaceChildren();}};
 };
