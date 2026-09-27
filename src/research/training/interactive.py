@@ -49,24 +49,22 @@ def build_prompt_session(*, input=None, output=None) -> 'PromptSession':
 
 
 def read_draft(session, input_mode: str, *, stream: TextIO) -> str | None:
-    if input_mode == 'bracketed':
+    if input_mode not in ('bracketed', 'lines'):
+        raise ValueError('unknown input mode')
+    lines = []
+    while True:
         try:
-            return session.prompt('text> ')
+            text = session.prompt('text> ')
         except EOFError:
             return None
         finally:
             session.default_buffer.reset()
-    if input_mode != 'lines':
-        raise ValueError('unknown input mode')
-    lines = []
-    while True:
-        line = stream.readline()
-        if not line:
-            return None
-        line = line.replace('\r\n', '\n').replace('\r', '\n')
-        if line.removesuffix('\n') == ':submit':
+        if input_mode == 'bracketed':
+            return text
+        line = text.replace('\r\n', '\n').replace('\r', '\n')
+        if line == ':submit':
             return ''.join(lines)
-        lines.append(line)
+        lines.append(line + '\n')
 
 
 def _failure_result(detector, document):
@@ -102,12 +100,12 @@ def run_interactive(model: Path, device: str, input_mode: str, *, detector_facto
         print(f'Checkpoint load failed ({type(exc).__name__}).', file=stderr, flush=True)
         return 1
 
+    if prompt_session is None:
+        from prompt_toolkit.input.defaults import create_input
+        from prompt_toolkit.output.defaults import create_output
+        prompt_session = build_prompt_session(input=create_input(stdin=stdin),
+                                              output=create_output(stdout=stderr))
     if input_mode == 'bracketed':
-        if prompt_session is None:
-            from prompt_toolkit.input.defaults import create_input
-            from prompt_toolkit.output.defaults import create_output
-            prompt_session = build_prompt_session(input=create_input(stdin=stdin),
-                                                  output=create_output(stdout=stderr))
         print('Enter: submit; Escape then Enter: newline; Ctrl+C: clear; Ctrl+D: exit. '
               'Pasted text stays one draft. Terminal/OS line endings may change; use --stdin for exact UTF-8.',
               file=stderr, flush=True)
@@ -117,8 +115,6 @@ def run_interactive(model: Path, device: str, input_mode: str, *, detector_facto
     submission = 0
     while True:
         try:
-            if input_mode == 'lines':
-                print('text> ', end='', file=stderr, flush=True)
             text = read_draft(prompt_session, input_mode, stream=stdin)
         except KeyboardInterrupt:
             print('Draft cleared.', file=stderr, flush=True)

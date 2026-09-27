@@ -42,14 +42,14 @@ def api():
     return importlib.import_module('research.training.interactive')
 
 
-def run_keys(keys, *, detector_class=StubDetector, tmp_path=None, monkeypatch=None):
+def run_keys(keys, *, detector_class=StubDetector, tmp_path=None, monkeypatch=None, input_mode='bracketed'):
     # Playwright's session fixture owns the main thread's event loop during the full suite.
     with ThreadPoolExecutor(max_workers=1) as executor:
         return executor.submit(_run_keys, keys, detector_class=detector_class,
-                               tmp_path=tmp_path, monkeypatch=monkeypatch).result(timeout=15)
+                               tmp_path=tmp_path, monkeypatch=monkeypatch, input_mode=input_mode).result(timeout=15)
 
 
-def _run_keys(keys, *, detector_class, tmp_path, monkeypatch):
+def _run_keys(keys, *, detector_class, tmp_path, monkeypatch, input_mode):
     interactive = api()
     loaded = []
 
@@ -64,7 +64,7 @@ def _run_keys(keys, *, detector_class, tmp_path, monkeypatch):
     with create_pipe_input() as pipe:
         session = interactive.build_prompt_session(input=pipe, output=DummyOutput())
         pipe.send_text(keys)
-        status = interactive.run_interactive(Path('checkpoint'), 'cpu', 'bracketed',
+        status = interactive.run_interactive(Path('checkpoint'), 'cpu', input_mode,
                                             detector_factory=factory, prompt_session=session,
                                             stdin=Terminal(), stdout=stdout, stderr=stderr)
         assert session.history.get_strings() == []
@@ -187,21 +187,18 @@ def test_model_diagnostics_cannot_contaminate_json_stdout(capsys):
 
 
 @pytest.mark.parametrize(('source', 'expected'), [
-    ('NumPy\r\n\r\n🧪 Python\r\n:submit\r\ndiscarded', ['NumPy\n\n🧪 Python\n']),
-    (':submit\n  \n:submit\nNumPy\n:submit\n', ['NumPy\n']),
-    ('unsent\n', []),
+    ('NumPy\r\r🧪 Python\r:submit\rdiscarded\x04', ['NumPy\n\n🧪 Python\n']),
+    (':submit\r  \r:submit\rNumPy\r:submit\r\x04', ['NumPy\n']),
+    ('unsent\rpending\x04', []),
+    ('\x1b[200~NumPy\r\nPython\r\x1b[201~\r:submit\r\x04', ['NumPy\nPython\n\n']),
+    ('discarded\rpending\x03NumPy\r:submit\r\x04', ['NumPy\n']),
 ])
 def test_line_mode_terminator_normalization_and_eof(source, expected):
-    interactive = api()
-    detector = StubDetector(Path('checkpoint'), 'cpu')
-    stdout, stderr = io.StringIO(), io.StringIO()
-    status = interactive.run_interactive(Path('checkpoint'), 'cpu', 'lines',
-                                        detector_factory=lambda *args: detector,
-                                        stdin=Terminal(source), stdout=stdout, stderr=stderr)
+    status, loaded, rows, stderr = run_keys(source, input_mode='lines')
     assert status == 0
-    assert [d['text'] for d in detector.documents] == expected
-    assert len(stdout.getvalue().splitlines()) == len(expected)
-    assert ':submit' in stderr.getvalue() and 'normaliz' in stderr.getvalue()
+    assert [d['text'] for d in loaded[0].documents] == expected
+    assert len(rows) == len(expected)
+    assert ':submit' in stderr and 'normaliz' in stderr
 
 
 def test_non_tty_rejected_before_loading():
