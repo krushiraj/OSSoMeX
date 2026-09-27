@@ -32,6 +32,9 @@ def choose_device(name):
 
 
 def validate_recipe(config):
+    minimum = config.get('min_steps_per_epoch', 1)
+    if type(minimum) is not int or not 1 <= minimum <= 10:
+        raise ValueError('invalid recipe: min_steps_per_epoch')
     for key, low, high in [('epochs', 1, 10), ('microbatch_size', 1, 2), ('gradient_accumulation', 1, 32)]:
         if type(config.get(key)) is not int or not low <= config[key] <= high:
             raise ValueError(f'invalid recipe: {key}')
@@ -68,13 +71,14 @@ def train_model(model, tokenizer, groups, config, device, on_epoch=None):
     model.to(device).train()
     micro, accumulation = config['microbatch_size'], config['gradient_accumulation']
     effective = micro * accumulation
-    steps_per_epoch = math.ceil(sum(map(len, groups.values())) / effective)
+    steps_per_epoch = max(config.get('min_steps_per_epoch', 1), math.ceil(sum(map(len, groups.values())) / effective))
     total_steps = steps_per_epoch * config['epochs']
     optimizer = torch.optim.AdamW(model.parameters(), lr=config['learning_rate'], weight_decay=config['weight_decay'])
-    scheduler = get_linear_schedule_with_warmup(optimizer, math.ceil(total_steps * config['warmup_ratio']), total_steps)
+    warmup_steps = min(total_steps - 1, math.ceil(total_steps * config['warmup_ratio']))
+    scheduler = get_linear_schedule_with_warmup(optimizer, warmup_steps, total_steps)
     names, counts, epochs = sorted(groups), Counter(), []
     started = time.monotonic()
-    steps = 0
+    steps, effective_steps = 0, 0
     for epoch in range(config['epochs']):
         losses = []
         for _ in range(steps_per_epoch):
@@ -93,6 +97,8 @@ def train_model(model, tokenizer, groups, config, device, on_epoch=None):
                 losses.append(float(loss.detach().cpu()))
                 (loss / accumulation).backward()
             norm = torch.nn.utils.clip_grad_norm_(model.parameters(), config['max_grad_norm'], error_if_nonfinite=True)
+            if optimizer.param_groups[0]['lr'] > 0 and float(norm.detach().cpu()) > 0:
+                effective_steps += 1
             optimizer.step()
             scheduler.step()
             steps += 1
@@ -101,7 +107,8 @@ def train_model(model, tokenizer, groups, config, device, on_epoch=None):
         epochs.append(entry)
         if on_epoch:
             on_epoch(entry)
-    return {'optimizer_steps': steps, 'epochs': epochs, 'device': device, 'dtype': 'float32',
+    return {'optimizer_steps': steps, 'effective_optimizer_steps': effective_steps,
+            'warmup_steps': warmup_steps, 'epochs': epochs, 'device': device, 'dtype': 'float32',
             'effective_batch_size': effective, 'steps_per_epoch': steps_per_epoch,
             'eligible_windows': sum(map(len, groups.values())), 'draw_counts': dict(counts),
             'sampler': 'single_source_uniform_document_then_eligible_window_with_replacement',
@@ -111,9 +118,9 @@ def train_model(model, tokenizer, groups, config, device, on_epoch=None):
 
 def save_detector(model, tokenizer, output, config, report, provenance):
     output = Path(output)
-    output.mkdir(parents=True, exist_ok=False)
-    if report.get('optimizer_steps', 0) < 1:
+    if report.get('optimizer_steps', 0) < 1 or report.get('effective_optimizer_steps', 0) < 1:
         raise ValueError('untrained detector cannot be saved as ready')
+    output.mkdir(parents=True, exist_ok=False)
     model.cpu().save_pretrained(output, safe_serialization=True)
     tokenizer.save_pretrained(output)
     manifest = {'schema_version': 'detector-checkpoint-1', 'status': 'trained_experimental',

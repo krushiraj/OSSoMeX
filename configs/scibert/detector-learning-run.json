@@ -1,0 +1,15 @@
+{
+  "base_model":"allenai/scibert_scivocab_cased",
+  "base_revision":"ddf0be025f8e432a1870e34811997ba6725bf04a",
+  "seed":42,
+  "epochs":10,
+  "min_steps_per_epoch":10,
+  "learning_rate":0.00005,
+  "weight_decay":0.01,
+  "warmup_ratio":0.1,
+  "microbatch_size":2,
+  "gradient_accumulation":16,
+  "max_grad_norm":1.0,
+  "max_length":482,
+  "overlap":64
+}

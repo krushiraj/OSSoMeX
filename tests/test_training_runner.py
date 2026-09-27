@@ -65,3 +65,32 @@ def test_unknown_features_and_invalid_recipe_do_not_train(tiny_tokenizer):
         train_model(model, tiny_tokenizer, {}, config(), 'cpu')
     with pytest.raises(ValueError, match='recipe'):
         train_model(model, tiny_tokenizer, {}, {**config(), 'epochs': 0}, 'cpu')
+
+
+@pytest.mark.parametrize('minimum, expected', [(1, 1), (3, 3)])
+def test_one_epoch_makes_effective_updates_and_respects_minimum(tiny_tokenizer, minimum, expected):
+    from research.training.runner import train_model
+    from research.training.models import build_model
+    from research.training.features import build_token_features
+    model = build_model({'vocab_size': len(tiny_tokenizer), 'hidden_size': 24, 'num_hidden_layers': 1,
+                         'num_attention_heads': 2, 'intermediate_size': 32})
+    before = {name: p.detach().clone() for name, p in model.named_parameters()}
+    features = build_token_features({'document_id': 'tiny', 'text': 'NumPy'},
+                                   [{'name': 'NumPy', 'name_span': {'start': 0, 'end': 5}, 'known': {'software': True}}],
+                                   [], tiny_tokenizer, config())
+    report = train_model(model, tiny_tokenizer, {'tiny': features['windows']},
+                         {**config(), 'epochs': 1, 'min_steps_per_epoch': minimum}, 'cpu')
+    assert report['optimizer_steps'] == expected
+    assert any(not torch.equal(before[name], p) for name, p in model.named_parameters())
+    assert report['effective_optimizer_steps'] > 0
+
+
+def test_save_refuses_no_effective_updates_without_creating_directory(tmp_path, tiny_tokenizer):
+    from research.training.runner import save_detector
+    from research.training.models import build_model
+    model = build_model({'vocab_size': len(tiny_tokenizer), 'hidden_size': 24, 'num_hidden_layers': 1,
+                         'num_attention_heads': 2, 'intermediate_size': 32})
+    with pytest.raises(ValueError, match='untrained'):
+        save_detector(model, tiny_tokenizer, tmp_path / 'model', config(),
+                      {'optimizer_steps': 1, 'effective_optimizer_steps': 0}, {'purpose': 'plumbing_test'})
+    assert not (tmp_path / 'model').exists()

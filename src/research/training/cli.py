@@ -1,9 +1,31 @@
 """Additive detector commands; legacy five-field output remains untouched."""
 
 import json
+import os
 from pathlib import Path
+import tempfile
 
-from ..data.manifest import read_jsonl, write_jsonl
+from ..data.manifest import read_jsonl
+
+
+def write_predictions(output, results):
+    output = Path(output)
+    if output.exists():
+        raise FileExistsError(output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=output.parent, prefix='.predictions-', delete=False) as stream:
+            temporary = Path(stream.name)
+            for result in results:
+                stream.write((json.dumps(result, ensure_ascii=False, sort_keys=True) + '\n').encode())
+            stream.flush()
+            os.fsync(stream.fileno())
+        # A same-filesystem hard link publishes complete bytes without overwriting a concurrent writer.
+        os.link(temporary, output)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def register(subparsers):
@@ -55,7 +77,7 @@ def cmd_predict(args):
     detector = Detector(Path(args.model), args.device)
     results = [detector.predict(document) for document in documents]
     if args.output:
-        write_jsonl(Path(args.output), results)
+        write_predictions(Path(args.output), results)
         print(json.dumps({'output': args.output, 'documents': len(results)}))
     else:
         for result in results:

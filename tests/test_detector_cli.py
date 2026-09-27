@@ -31,3 +31,27 @@ def test_prepare_real_frozen_sources_and_reject_changed_bundle(tmp_path):
     (destination / 'items.jsonl').write_text('')
     with pytest.raises(ValueError, match='changed'):
         load_training_data(destination)
+
+
+def test_predictions_publish_atomically_and_refuse_overwrite(tmp_path, monkeypatch):
+    import os
+    from research.training.cli import write_predictions
+    output = tmp_path / 'predictions.jsonl'
+    real_sync = os.fsync
+
+    def fail_sync(fd):
+        assert not output.exists()
+        raise OSError('simulated full disk')
+
+    monkeypatch.setattr(os, 'fsync', fail_sync)
+    with pytest.raises(OSError, match='full disk'):
+        write_predictions(output, [{'document_id': 'a'}, {'document_id': 'b'}])
+    assert not output.exists()
+    assert list(tmp_path.iterdir()) == []
+    monkeypatch.setattr(os, 'fsync', real_sync)
+    write_predictions(output, [{'document_id': 'a'}, {'document_id': 'b'}])
+    assert len(output.read_text().splitlines()) == 2
+    before = output.read_bytes()
+    with pytest.raises(FileExistsError):
+        write_predictions(output, [{'document_id': 'wrong'}])
+    assert output.read_bytes() == before
