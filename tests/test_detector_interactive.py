@@ -4,6 +4,7 @@ import hashlib
 import importlib
 import io
 import json
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -42,6 +43,13 @@ def api():
 
 
 def run_keys(keys, *, detector_class=StubDetector, tmp_path=None, monkeypatch=None):
+    # Playwright's session fixture owns the main thread's event loop during the full suite.
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        return executor.submit(_run_keys, keys, detector_class=detector_class,
+                               tmp_path=tmp_path, monkeypatch=monkeypatch).result(timeout=15)
+
+
+def _run_keys(keys, *, detector_class, tmp_path, monkeypatch):
     interactive = api()
     loaded = []
 
