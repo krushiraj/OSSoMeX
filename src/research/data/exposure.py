@@ -257,8 +257,12 @@ def build_exposures(config: dict, output: Path) -> dict:
                     existing = target[key]
                     existing['exposure_sources'].append(source)
                     existing['identity_keys'] = sorted(set(existing['identity_keys']) | set(row['identity_keys']))
+                    parent_association = {field: deepcopy(row[field])
+                                          for field in ('source_ids', 'metadata', 'work_id', 'doi') if field in row}
+                    parent_association['exposure_source'] = source
+                    existing.setdefault('source_associations', []).append(parent_association)
                     if row.get('source_associations'):
-                        existing.setdefault('source_associations', []).extend(row['source_associations'])
+                        existing['source_associations'].extend(row['source_associations'])
     docs, reserved = list(documents.values()), list(identities.values())
     issues = _issues(docs + reserved)
     payloads = {'config.json': json_bytes(config), 'documents.jsonl': _jsonl_bytes(docs),

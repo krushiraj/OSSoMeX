@@ -176,6 +176,34 @@ def test_known_parent_aliases_propagate_restrictive_role_without_merging_snippet
     assert exposure.exposure_reasons(document('other', source_ids={'doi': '10.1000/separate'}), separate, purpose='training') == []
 
 
+@pytest.mark.parametrize('identity_format', ['source_ids', 'legacy_metadata'])
+@pytest.mark.parametrize('later_parent', ['W401', 'W402'])
+def test_duplicate_rows_retain_parent_alias_groups_without_merging_unrelated_parents(
+        tmp_path, identity_format, later_parent):
+    later_identity = ({'source_ids': {'openalex': later_parent, 'doi': '10.1000/known'}}
+                      if identity_format == 'source_ids' else {
+                          'metadata': {'work_id': f'https://openalex.org/{later_parent}',
+                                       'doi': 'https://doi.org/10.1000/KNOWN'}})
+    config = {'inputs': [
+        input_record(tmp_path / 'first.jsonl', [document('train',
+            source_ids={'openalex': 'W401'})], 'train_reserved'),
+        input_record(tmp_path / 'later.jsonl', [document('train', **later_identity)], 'train_reserved'),
+        input_record(tmp_path / 'diagnostic.jsonl', [{'source_ids': {'openalex': 'W401'}}]),
+    ]}
+    output = tmp_path / 'exposures'
+    report = exposure.build_exposures(config, output)
+    loaded = exposure.load_exposures(output)
+    assert report['document_count'] == 1
+    assert len(loaded['documents'][0]['exposure_sources']) == 2
+    candidate = document('different-provider', source_ids={'doi': '10.1000/known'})
+    reasons = exposure.exposure_reasons(candidate, loaded, purpose='training')
+    if later_parent == 'W401':
+        assert reasons and {(row['role'], row['reason']) for row in reasons} == {
+            ('diagnostic', 'identifier_overlap')}
+    else:
+        assert reasons == []
+
+
 def test_relative_source_paths_remain_bound_to_build_directory(tmp_path, monkeypatch):
     spec = input_record(tmp_path / 'source.jsonl', [document('parent')])
     spec['path'] = 'source.jsonl'
