@@ -15,11 +15,17 @@ identity rows rather than treating a document's first source_ids as exhaustive.
 
 from copy import deepcopy
 import html
+import json
 import math
+from pathlib import Path
 import re
+from urllib.parse import urlencode
 
 from ..comparison.contracts import validate_input
 from ..contracts import text_revision
+from .artifacts import atomic_write_new
+from .manifest import digest, json_bytes
+from .openalex_transport import ENDPOINT, QUERIES, fetch_snippet_response, validate_policy
 
 
 NORMALIZATION_VERSION = "openalex-literal-em-html-unescape-1"
@@ -173,3 +179,169 @@ def deduplicate_snippets(rows: list[dict]) -> tuple[list[dict], list[dict]]:
                 identities[key] = {**_POLICY, "source_ids": deepcopy(source_ids), "source_associations": []}
             identities[key]["source_associations"].append(deepcopy(association))
     return list(documents.values()), list(identities.values())
+
+
+def _verify_config_source(config: dict) -> None:
+    source = config.get('config_source')
+    if source is None:
+        return
+    if (not isinstance(source, dict) or set(source) != {'path', 'sha256', 'bytes_utf8'}
+            or not isinstance(source['path'], str) or not Path(source['path']).is_absolute()
+            or not isinstance(source['bytes_utf8'], str)):
+        raise ValueError('invalid config_source')
+    original = source['bytes_utf8'].encode('utf-8')
+    if digest(original) != source['sha256'] or Path(source['path']).read_bytes() != original:
+        raise ValueError('changed config_source bytes/hash')
+    parsed = json.loads(original)
+    if parsed != {key: value for key, value in config.items() if key != 'config_source'}:
+        raise ValueError('config_source differs from effective acquisition config')
+
+
+def _collection_config(config: dict) -> dict:
+    bounds = {'page': (1, 1), 'per_page': (1, 5), 'snippets_per_work': (1, 2),
+              'max_candidates': (1, 100), 'max_concurrency': (1, 2)}
+    keys = set(bounds) | {'endpoint', 'queries', 'timeout_seconds', 'max_retries', 'max_bytes'}
+    if not isinstance(config, dict) or not keys <= set(config) or set(config) - keys - {'config_source'}:
+        raise ValueError('invalid collection config keys')
+    config = deepcopy(config)
+    if config['endpoint'] != ENDPOINT or config['queries'] != list(QUERIES):
+        raise ValueError('invalid collection endpoint/queries')
+    validate_policy({key: config[key] for key in ('timeout_seconds', 'max_retries', 'max_bytes')})
+    for key, (minimum, maximum) in bounds.items():
+        if type(config[key]) is not int or not minimum <= config[key] <= maximum:
+            raise ValueError(f'invalid collection bound: {key}')
+    _verify_config_source(config)
+    return config
+
+
+def _jsonl_bytes(rows: list[dict]) -> bytes:
+    return ''.join(json.dumps(row, ensure_ascii=False, sort_keys=True) + '\n' for row in rows).encode('utf-8')
+
+
+def _empty_identities(payload: dict, query: str, request: dict, work_limit: int) -> list[dict]:
+    identities = []
+    for rank, work in enumerate(payload['results'][:work_limit]):
+        source_ids = _source_ids(work, f'results[{rank}]')
+        if work['snippets']:
+            continue
+        association = {'source_ids': source_ids, 'work_id': work['id'], 'query': query,
+                       'request': deepcopy(request), 'request_url': request['url'],
+                       'response_sha256': request['response_sha256'],
+                       'retrieved_at': request['retrieved_at'], 'work_rank': rank,
+                       'reason': 'no_snippets', 'relevance_score': work['relevance_score']}
+        identities.append({**_POLICY, 'source_ids': source_ids, 'reason': 'no_snippets',
+                           'source_associations': [association]})
+    return identities
+
+
+def collect_snippets(config: dict, output: Path) -> dict:
+    """Publish a new immutable, diagnostic-only bundle with the manifest last."""
+    config = _collection_config(config)
+    output = Path(output)
+    output.mkdir(parents=True, exist_ok=False)
+    files = []
+
+    def publish(relative: str, payload: bytes) -> None:
+        atomic_write_new(output / relative, payload)
+        files.append({'path': relative, 'sha256': digest(payload)})
+
+    plan = [{'query': query, 'query_rank': rank,
+             'url': ENDPOINT + '?' + urlencode({'search': query, 'page': 1, 'per_page': config['per_page']})}
+            for rank, query in enumerate(config['queries'])]
+    publish('config.json', json_bytes(config))
+    publish('request-plan.jsonl', _jsonl_bytes(plan))
+    (output / 'raw').mkdir()
+    policy = {key: config[key] for key in ('timeout_seconds', 'max_retries', 'max_bytes')}
+    requests_log, candidates, identities, issues, stop_reasons = [], [], [], [], []
+    completed = failed = 0
+    stop = None
+    for planned in plan:
+        if stop is not None or len(candidates) >= config['max_candidates']:
+            reason = stop or 'candidate_budget'
+            if reason not in stop_reasons:
+                stop_reasons.append(reason)
+            requests_log.append({**planned, 'status': 'skipped', 'reason': reason, 'attempts': []})
+            issues.append({**planned, 'reason': reason, 'kind': 'skipped_query'})
+            continue
+        raw_dir = Path('raw') / f'query-{planned["query_rank"]:02d}'
+        record = fetch_snippet_response(planned['url'], output / raw_dir, policy=policy)
+        for attempt in record['attempts']:
+            if attempt['raw_path'] is not None:
+                relative = (raw_dir / attempt['raw_path']).as_posix()
+                if digest((output / relative).read_bytes()) != attempt['response_sha256']:
+                    raise ValueError(f'raw response hash mismatch: {relative}')
+                files.append({'path': relative, 'sha256': attempt['response_sha256']})
+        transport_record = raw_dir / 'record.json'
+        files.append({'path': transport_record.as_posix(),
+                      'sha256': digest((output / transport_record).read_bytes())})
+        entry = {**planned, **deepcopy(record), 'raw_directory': raw_dir.as_posix()}
+        requests_log.append(entry)
+        if record['stop_collection']:
+            stop = record['reason']
+            stop_reasons.append(stop)
+        if record['status'] != 'completed':
+            failed += 1
+            issues.append({**planned, 'reason': record['reason'], 'kind': 'request_failed'})
+            continue
+        raw_path = output / raw_dir / record['raw_path']
+        raw = raw_path.read_bytes()
+        if digest(raw) != record['response_sha256']:
+            raise ValueError('raw response hash mismatch')
+        request = {key: record[key] for key in ('url', 'response_sha256', 'retrieved_at')}
+        request.update(query_rank=planned['query_rank'], raw_path=raw_path.relative_to(output).as_posix())
+        try:
+            payload = json.loads(raw)
+            rows = parse_response(payload, query=planned['query'], request=request,
+                                  work_limit=config['per_page'], snippet_limit=config['snippets_per_work'])
+            empty = _empty_identities(payload, planned['query'], request, config['per_page'])
+        except (OpenAlexSchemaError, ValueError, UnicodeError) as exc:
+            failed += 1
+            entry.update(status='failed', reason='schema_error', schema_error=str(exc))
+            issues.append({**planned, 'reason': 'schema_error', 'error': str(exc), 'kind': 'request_failed'})
+            continue
+        remaining = config['max_candidates'] - len(candidates)
+        candidates.extend(rows[:remaining])
+        identities.extend(empty)
+        _, skipped_identities = deduplicate_snippets(rows[remaining:])
+        for identity in skipped_identities:
+            identity['reason'] = 'candidate_budget'
+            for association in identity['source_associations']:
+                association['reason'] = 'candidate_budget'
+        identities.extend(skipped_identities)
+        for row in rows[remaining:]:
+            issues.append({'kind': 'skipped_candidate', 'reason': 'candidate_budget',
+                           'source_associations': row['source_associations']})
+        if rows[remaining:]:
+            stop_reasons.append('candidate_budget')
+        for work_rank, work in enumerate(payload['results']):
+            if work_rank >= config['per_page']:
+                issues.append({**planned, 'kind': 'skipped_work', 'reason': 'work_limit', 'work_rank': work_rank})
+            elif len(work['snippets']) > config['snippets_per_work']:
+                issues.append({**planned, 'kind': 'skipped_snippets', 'reason': 'snippet_limit',
+                               'work_rank': work_rank, 'count': len(work['snippets']) - config['snippets_per_work']})
+        completed += 1
+    documents, candidate_identities = deduplicate_snippets(candidates)
+    identities = candidate_identities + identities
+    for row in candidates:
+        if row['status'] == 'rejected':
+            issues.append({'kind': 'rejected_candidate', 'reason': row['rejection_reason'], 'candidate': row})
+    publish('requests.jsonl', _jsonl_bytes(requests_log))
+    publish('inputs.jsonl', _jsonl_bytes(documents))
+    publish('identities.jsonl', _jsonl_bytes(identities))
+    publish('issues.jsonl', _jsonl_bytes(issues))
+    _verify_config_source(config)
+    for file in files:
+        if digest((output / file['path']).read_bytes()) != file['sha256']:
+            raise ValueError(f'artifact hash mismatch: {file["path"]}')
+    status = 'failed' if not completed else 'partial' if failed or stop_reasons else 'completed'
+    manifest = {**_POLICY, 'schema_version': 'openalex-diagnostic-1', 'status': status,
+                'normalization_version': NORMALIZATION_VERSION, 'files': files,
+                'stop_reasons': list(dict.fromkeys(stop_reasons)),
+                'counts': {'planned_queries': len(plan), 'completed_queries': completed,
+                           'failed_queries': failed, 'skipped_queries': len(plan) - completed - failed,
+                           'candidates': len(candidates), 'rejected': sum(row['status'] == 'rejected' for row in candidates),
+                           'documents': len(documents), 'identities': len(identities)},
+                'diagnostic_limitations': ['query_selected_highlights', 'not_gold_labels',
+                                           'paper_language_and_license_not_verified']}
+    atomic_write_new(output / 'manifest.json', json_bytes(manifest))
+    return manifest
