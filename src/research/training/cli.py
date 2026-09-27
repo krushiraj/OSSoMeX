@@ -3,9 +3,18 @@
 import json
 import os
 from pathlib import Path
+import sys
 import tempfile
+from typing import BinaryIO
 
 from ..data.manifest import read_jsonl
+
+
+def read_stdin_document(stream: BinaryIO, document_id: str) -> dict:
+    text = stream.read().decode('utf-8', errors='strict')
+    if not text.strip():
+        raise ValueError('nonempty stdin text required')
+    return {'document_id': document_id, 'text': text}
 
 
 def write_predictions(output, results):
@@ -46,6 +55,7 @@ def register(subparsers):
     source = predict.add_mutually_exclusive_group(required=True)
     source.add_argument('--text')
     source.add_argument('--input', help='JSONL objects with document_id and text')
+    source.add_argument('--stdin', action='store_true', help='One document from strict UTF-8 stdin')
     predict.add_argument('--document-id', default='input')
     predict.add_argument('--output', help='New immutable JSONL output; otherwise stdout')
     predict.add_argument('--device', choices=('auto', 'cpu', 'mps'), default='auto')
@@ -71,7 +81,10 @@ def cmd_predict(args):
     from .predict import Detector
     if args.output and Path(args.output).exists():
         raise FileExistsError(args.output)
-    documents = read_jsonl(Path(args.input)) if args.input else [{'document_id': args.document_id, 'text': args.text}]
+    if args.stdin:
+        documents = [read_stdin_document(sys.stdin.buffer, args.document_id)]
+    else:
+        documents = read_jsonl(Path(args.input)) if args.input else [{'document_id': args.document_id, 'text': args.text}]
     if not documents or len({d.get('document_id') for d in documents}) != len(documents):
         raise ValueError('nonempty input with unique document IDs required')
     detector = Detector(Path(args.model), args.device)
