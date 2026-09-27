@@ -319,3 +319,20 @@ def test_explicit_span_kind_takes_precedence_over_provenance_kind():
     ref = reference(doc, [gold], provenance={"review_kind": "human_reviewed"})
     label = score([doc], [result(doc, [gold])], [ref])["arms"]["a"]["labels"]["SOFTWARE"]
     assert label["positive_recovery"]["eligible_positives"] == 0
+
+
+@pytest.mark.parametrize("kind", ["human_reviewed", "agent_provisional"])
+@pytest.mark.parametrize("order", [("agent_provisional", "human_reviewed"),
+                                   ("human_reviewed", "agent_provisional")])
+@pytest.mark.parametrize("grouped", [True, False])
+def test_duplicate_positive_review_kinds_survive_order_and_row_grouping(kind, order, grouped):
+    doc = document()
+    gold = span(doc, "SOFTWARE", 0, 5)
+    evidence = [{**gold, "review_kind": review_kind} for review_kind in order] * 2
+    refs = [reference(doc, evidence)] if grouped else [reference(doc, [s]) for s in evidence]
+    report = score([doc], [result(doc, [gold])], refs, kind)
+    label = report["arms"]["a"]["labels"]["SOFTWARE"]
+    assert label["positive_recovery"] == {"eligible_positives": 1, "recovered": 1, "missed": 0,
+                                           "recovery_rate": 1., "eligible_documents": 1}
+    assert label["operational"] == {"tp": 0, "fp": 0, "fn": 0,
+                                    "precision": None, "recall": None, "f1": None}

@@ -124,7 +124,8 @@ def _reference_index(indexed, references):
         doc = indexed[ref["document_id"]]
         validated = validate_reference(doc, ref)
         target = by_document[doc["document_id"]]
-        for span in validated["spans"]:
+        # Validation checks every original span, but its return value keeps only the first duplicate.
+        for span in ref["spans"]:
             kind = span.get("review_kind", validated["provenance"].get("review_kind"))
             if kind is not None and kind not in REVIEW_KINDS:
                 raise ValueError("invalid reference span review_kind")
