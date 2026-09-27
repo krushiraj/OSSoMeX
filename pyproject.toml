@@ -14,6 +14,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8,<10", "pytest-playwright>=0.5,<1"]
+interactive = ["prompt_toolkit==3.0.52"]
 ml = [
     "torch>=2.6,<3",
     "transformers>=4.40,<5",

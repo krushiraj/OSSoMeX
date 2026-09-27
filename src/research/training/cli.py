@@ -60,6 +60,16 @@ def register(subparsers):
     predict.add_argument('--output', help='New immutable JSONL output; otherwise stdout')
     predict.add_argument('--device', choices=('auto', 'cpu', 'mps'), default='auto')
     predict.set_defaults(func=cmd_predict)
+    interactive = commands.add_parser('interactive', help='Keep a local detector loaded for multiline terminal input')
+    interactive.add_argument('--model', required=True)
+    interactive.add_argument('--device', choices=('auto', 'cpu', 'mps'), default='auto')
+    interactive.add_argument('--input-mode', choices=('bracketed', 'lines'), default='bracketed')
+    interactive.set_defaults(func=cmd_interactive)
+
+
+def cmd_interactive(args):
+    from .interactive import run_interactive
+    return run_interactive(Path(args.model), args.device, args.input_mode)
 
 
 def cmd_prepare(args):

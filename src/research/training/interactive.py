@@ -1,0 +1,145 @@
+"""Resident, local inference with ephemeral terminal drafts."""
+
+from contextlib import redirect_stdout
+import hashlib
+import json
+from pathlib import Path
+import sys
+from typing import TYPE_CHECKING, TextIO
+
+if TYPE_CHECKING:
+    from prompt_toolkit import PromptSession
+
+
+def build_prompt_session(*, input=None, output=None) -> 'PromptSession':
+    from prompt_toolkit import PromptSession
+    from prompt_toolkit.history import DummyHistory
+    from prompt_toolkit.key_binding import KeyBindings
+    from prompt_toolkit.output.defaults import create_output
+
+    bindings = KeyBindings()
+
+    @bindings.add('enter')
+    def submit(event):
+        event.current_buffer.validate_and_handle()
+
+    @bindings.add('escape', 'enter')
+    def newline(event):
+        event.current_buffer.insert_text('\n')
+
+    @bindings.add('<bracketed-paste>')
+    def paste(event):
+        # The upstream binding rewrites CRLF and CR; offsets require the delivered text.
+        event.current_buffer.insert_text(event.data)
+
+    @bindings.add('c-c')
+    def cancel(event):
+        event.current_buffer.reset()
+        event.app.exit(exception=KeyboardInterrupt())
+
+    @bindings.add('c-d')
+    def finish(event):
+        event.current_buffer.reset()
+        event.app.exit(exception=EOFError())
+
+    return PromptSession(multiline=True, key_bindings=bindings, history=DummyHistory(),
+                         auto_suggest=None, enable_history_search=False,
+                         enable_open_in_editor=False, enable_system_prompt=False,
+                         input=input, output=output if output is not None else create_output(stdout=sys.stderr))
+
+
+def read_draft(session, input_mode: str, *, stream: TextIO) -> str | None:
+    if input_mode == 'bracketed':
+        try:
+            return session.prompt('text> ')
+        except EOFError:
+            return None
+        finally:
+            session.default_buffer.reset()
+    if input_mode != 'lines':
+        raise ValueError('unknown input mode')
+    lines = []
+    while True:
+        line = stream.readline()
+        if not line:
+            return None
+        line = line.replace('\r\n', '\n').replace('\r', '\n')
+        if line.removesuffix('\n') == ':submit':
+            return ''.join(lines)
+        lines.append(line)
+
+
+def _failure_result(detector, document):
+    return {'schema_version': 'detector-prediction-1', 'document_id': document['document_id'],
+            'text_revision': 'sha256:' + hashlib.sha256(document['text'].encode()).hexdigest(),
+            'checkpoint_sha256': detector.identity, 'capabilities': detector.manifest['capabilities'],
+            'scores_calibrated': False, 'quality_evaluated': False, 'review_required': True,
+            'review_reasons': ['experimental_small_data', 'uncalibrated_scores', 'incomplete_document'],
+            'offset_unit': 'unicode_codepoint_half_open', 'chunks': [], 'spans': [], 'status': 'failure'}
+
+
+def run_interactive(model: Path, device: str, input_mode: str, *, detector_factory=None,
+                    prompt_session=None, stdin=None, stdout=None, stderr=None) -> int:
+    stdin = sys.stdin if stdin is None else stdin
+    stdout = sys.stdout if stdout is None else stdout
+    stderr = sys.stderr if stderr is None else stderr
+    if not stdin.isatty():
+        print('Interactive input requires a terminal; use detector predict --stdin for piped UTF-8 text.',
+              file=stderr, flush=True)
+        return 2
+    if input_mode not in ('bracketed', 'lines'):
+        raise ValueError('unknown input mode')
+    try:
+        with redirect_stdout(stderr):
+            if detector_factory is None:
+                from .predict import Detector
+                detector_factory = Detector
+            detector = detector_factory(model, device)
+    except KeyboardInterrupt:
+        print('Checkpoint load interrupted.', file=stderr, flush=True)
+        return 130
+    except Exception as exc:
+        print(f'Checkpoint load failed ({type(exc).__name__}).', file=stderr, flush=True)
+        return 1
+
+    if input_mode == 'bracketed':
+        if prompt_session is None:
+            from prompt_toolkit.input.defaults import create_input
+            from prompt_toolkit.output.defaults import create_output
+            prompt_session = build_prompt_session(input=create_input(stdin=stdin),
+                                                  output=create_output(stdout=stderr))
+        print('Enter: submit; Escape then Enter: newline; Ctrl+C: clear; Ctrl+D: exit. '
+              'Pasted text stays one draft. Terminal/OS line endings may change; use --stdin for exact UTF-8.',
+              file=stderr, flush=True)
+    else:
+        print('Line mode: a line containing exactly :submit submits; Ctrl+C clears; Ctrl+D exits. '
+              'Line endings are normalized to LF; EOF discards an unfinished draft.', file=stderr, flush=True)
+    submission = 0
+    while True:
+        try:
+            if input_mode == 'lines':
+                print('text> ', end='', file=stderr, flush=True)
+            text = read_draft(prompt_session, input_mode, stream=stdin)
+        except KeyboardInterrupt:
+            print('Draft cleared.', file=stderr, flush=True)
+            continue
+        if text is None:
+            return 0
+        if not text.strip():
+            print('Enter nonblank text before submitting.', file=stderr, flush=True)
+            continue
+        submission += 1
+        document = {'document_id': f'interactive-{submission}', 'text': text}
+        try:
+            with redirect_stdout(stderr):
+                result = detector.predict(document)
+        except KeyboardInterrupt:
+            print('Inference interrupted; no result emitted.', file=stderr, flush=True)
+            return 130
+        except Exception as exc:
+            result = _failure_result(detector, document)
+            print(f'Inference failed ({type(exc).__name__}).', file=stderr, flush=True)
+        print(json.dumps(result, ensure_ascii=False), file=stdout, flush=True)
+        if result['status'] == 'failure':
+            print('Inference failed; restart the command before another request.', file=stderr, flush=True)
+            return 1
