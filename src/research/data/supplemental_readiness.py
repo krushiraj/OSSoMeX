@@ -49,6 +49,7 @@ def _support(documents, items, records):
             'payload': json.loads(record['payload']), 'result': json.loads(record['result']),
             'recorded_at': record['recorded_at']})
     versions, version_papers, projections = set(), set(), []
+    span_kinds = {}
     for item in items:
         task, annotation = item['task'], item['annotation']
         projection = project_review(item, histories.get(task['task_id'], []))
@@ -61,7 +62,6 @@ def _support(documents, items, records):
         result['by_review_kind'][kind] += 1
         for name in result['remaining_human_workload']:
             result['remaining_human_workload'][name] += projection[name]
-        seen = set()
         for occurrence in annotation['occurrences']:
             states = projection['fields'][occurrence['mention_id']]
             for field in FIELDS:
@@ -77,12 +77,9 @@ def _support(documents, items, records):
                 spans.extend(('VERSION', edge['span'], 'versions') for edge in occurrence['version_links'])
             for label, span, field in spans:
                 kind = 'human_reviewed' if states[field]['state'] == 'confirmed' else 'agent_provisional'
-                key = (label, span['start'], span['end'], kind)
-                if key in seen:
-                    continue
-                seen.add(key)
-                for counts in (result, paper, arm):
-                    counts['by_label'][label][kind] += 1
+                key = (task['document_id'], label, span['start'], span['end'])
+                if key not in span_kinds or kind == 'human_reviewed':
+                    span_kinds[key] = kind
                 if label == 'VERSION':
                     versions.add((task['document_id'], span['start'], span['end']))
                     version_papers.add(task['document_id'])
@@ -98,6 +95,11 @@ def _support(documents, items, records):
                 result['coverage'].append({'task_id': task['task_id'], 'label': label,
                     'start': region['start'], 'end': region['end'], 'known': known,
                     'review_kind': ('human_reviewed' if human else 'agent_provisional') if known else None})
+    for (document_id, label, start, end), kind in span_kinds.items():
+        paper = result['by_paper'][document_id]
+        arm = result['by_arm'][parents[document_id]['acquisition_arm']]
+        for counts in (result, paper, arm):
+            counts['by_label'][label][kind] += 1
     return result, {'explicit_spans': len(versions), 'papers': len(version_papers),
                     'required_spans': 20, 'required_papers': 6,
                     'span_shortfall': max(0, 20 - len(versions)), 'paper_shortfall': max(0, 6 - len(version_papers)),

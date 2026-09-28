@@ -13,14 +13,16 @@ from test_annotation_tasks import reply
 from test_supplemental_acquisition import FakeFetch, article, config
 
 
-def acquired(monkeypatch, tmp_path, sources=('europepmc',)):
+def acquired(monkeypatch, tmp_path, sources=('europepmc',), *, shared_context=False):
     from research.data import supplemental
     cfg = config(tmp_path)
     metadata, targeted, overrides, routes = [], {}, {}, {}
     for index, source in enumerate(sources, 1):
         target = ['ImageJ', 'GROMACS'][index - 1]
         targeted[target] = [{'doi': f'10.1000/p{index}'}]
-        body = ''.join(f'<p>Unique{index}trial{n} used {target} 1.24 for analysis{n}.</p>' for n in range(6))
+        body = ('<p>1.24 ' + ' '.join(f'Unique{index}trial{n} used {target} for analysis{n}.' for n in range(6)) + '</p>'
+                if shared_context else
+                ''.join(f'<p>Unique{index}trial{n} used {target} 1.24 for analysis{n}.</p>' for n in range(6)))
         original = article(index).decode()
         overrides[index] = (original.split('<body>')[0] + '<body>' + body + '</body></article>').encode()
         if source == 'ecosystems':
@@ -45,9 +47,9 @@ def acquired(monkeypatch, tmp_path, sources=('europepmc',)):
     return bundle
 
 
-def imported(monkeypatch, tmp_path, *, sources=('europepmc',), versions=False):
+def imported(monkeypatch, tmp_path, *, sources=('europepmc',), versions=False, shared_context=False):
     module = importlib.import_module('research.annotations.supplemental')
-    bundle = acquired(monkeypatch, tmp_path, sources)
+    bundle = acquired(monkeypatch, tmp_path, sources, shared_context=shared_context)
     tasks_path = tmp_path / 'tasks'
     manifest = module.prepare_supplemental_tasks(bundle, tasks_path)
     tasks = read_jsonl(tasks_path / 'tasks.jsonl')
@@ -55,14 +57,16 @@ def imported(monkeypatch, tmp_path, *, sources=('europepmc',), versions=False):
         value = reply(task, 'partial')
         value['annotator']['prompt_hash'] = manifest['prompt_sources']['annotate']['sha256']
         name = 'GROMACS' if 'GROMACS' in task['text'] else 'ImageJ'
-        lo = task['offset_base'] + task['text'].index(name)
+        owned_start = task['annotation_region']['start'] - task['offset_base']
+        owned_end = task['annotation_region']['end'] - task['offset_base']
+        lo = task['offset_base'] + task['text'].index(name, owned_start, owned_end)
         version_start = task['offset_base'] + task['text'].index('1.24')
         value['occurrences'] = [{'schema_version': '2.0', 'document_id': task['document_id'],
             'text_revision': task['text_revision'], 'name': name, 'name_span': {'start': lo, 'end': lo + len(name)},
             'context_sentence': task['text'], 'context_span': task['context_span'], 'context_kind': 'sentence',
             'version_status': 'explicit' if versions else 'unannotated',
             'version_links': [{'text': '1.24', 'span': {'start': version_start, 'end': version_start + 4},
-                               'status': 'explicit_local'}] if versions else [],
+                               'status': 'explicit_remote' if shared_context else 'explicit_local'}] if versions else [],
             'known': {field: field == 'software' or field == 'versions' and versions for field in FIELDS},
             'intents': None, 'sentiment': None, 'evidence': {'intents': [], 'sentiment': []},
             'review': {'status': 'pending', 'reasons': []}}]

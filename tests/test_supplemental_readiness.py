@@ -25,8 +25,10 @@ class LocalTokenizer:
         return {'input_ids': list(range(len(spans))), 'offset_mapping': spans}
 
 
-def snapshot(monkeypatch, tmp_path, *, human=False, versions=False, sources=('europepmc',)):
-    bundle, _, imported_path = imported(monkeypatch, tmp_path, sources=sources, versions=versions)
+def snapshot(monkeypatch, tmp_path, *, human=False, versions=False, sources=('europepmc',),
+             shared_context=False, confirmed_version_index=None):
+    bundle, _, imported_path = imported(monkeypatch, tmp_path, sources=sources, versions=versions,
+                                       shared_context=shared_context)
     meta = json.loads((imported_path / 'manifest.json').read_bytes())
     items = read_jsonl(imported_path / 'items.jsonl')
     c = review_store.open_store(tmp_path / 'review.sqlite')
@@ -40,6 +42,14 @@ def snapshot(monkeypatch, tmp_path, *, human=False, versions=False, sources=('eu
                              'target_name_span': occurrence['name_span'],
                              'fields': ['software'], 'reason_code': 'accept_proposal'}
                 review_store.apply_decision(c, batch(current, [operation], ident=f'review-{index}'))
+        if confirmed_version_index is not None:
+            ordered = sorted(items, key=lambda item: item['task']['task_id'])
+            current = review_store.get_item(c, ordered[confirmed_version_index]['task']['task_id'])
+            occurrence = current['annotation']['occurrences'][0]
+            operation = {'operation_id': 'accept-version', 'action': 'accept_fields',
+                         'target_name_span': occurrence['name_span'],
+                         'fields': ['versions'], 'reason_code': 'accept_proposal'}
+            review_store.apply_decision(c, batch(current, [operation], ident='version-review'))
         review_store.export_reference(c, tmp_path / 'snapshot')
     finally:
         c.close()
@@ -93,6 +103,55 @@ def test_mixed_sources_are_annotation_ready_but_sampler_unsupported(monkeypatch,
     assert result['sources'] == ['ecosystems', 'europepmc']
     assert result['version_goal']['explicit_spans'] == 12
     assert result['version_goal']['papers'] == 2
+
+
+@pytest.mark.parametrize('confirmed_version_index', [None, 0, 5])
+def test_shared_remote_version_support_counts_one_parent_span(monkeypatch, tmp_path, confirmed_version_index):
+    module = readiness(monkeypatch)
+    bundle, snap = snapshot(monkeypatch, tmp_path, sources=('ecosystems',), versions=True,
+                            shared_context=True, confirmed_version_index=confirmed_version_index)
+    before = (snap / 'items.jsonl').read_bytes()
+    result = module.assess_readiness(bundle, snap, tmp_path / 'report')
+    assert (snap / 'items.jsonl').read_bytes() == before
+    items = read_jsonl(snap / 'items.jsonl')
+    assert len(items) == 6
+    assert {(o['version_links'][0]['span']['start'], o['version_links'][0]['span']['end'])
+            for i in items for o in i['annotation']['occurrences']} == {(9, 13)}
+    assert all(o['version_links'][0]['status'] == 'explicit_remote' for i in items for o in i['annotation']['occurrences'])
+    expected = {'human_reviewed': 0 if confirmed_version_index is None else 1,
+                'agent_provisional': 1 if confirmed_version_index is None else 0}
+    support = result['support']
+    assert support['by_label']['VERSION'] == expected
+    assert support['by_paper']['supplemental:10.1000/p1']['by_label']['VERSION'] == expected
+    assert support['by_arm']['targeted']['by_label']['VERSION'] == expected
+    assert result['version_goal']['explicit_spans'] == 1
+    assert result['supervision']['summary']['version_spans'] == 1
+    assert support['by_label']['SOFTWARE'] == {'human_reviewed': 0, 'agent_provisional': 6}
+    assert support['fields']['versions'] == {'human_reviewed': 0 if confirmed_version_index is None else 1,
+        'agent_provisional': 6 if confirmed_version_index is None else 5, 'unknown': 0, 'known_absent': 0}
+    assert support['by_review_kind'] == {'human_reviewed': 0, 'agent_provisional': 6}
+    assert support['remaining_human_workload'] == {'needs_decisions': 12,
+        'proposals_to_confirm': 12 if confirmed_version_index is None else 11}
+
+
+def test_equal_remote_version_offsets_in_different_parents_remain_distinct(monkeypatch, tmp_path):
+    module = readiness(monkeypatch)
+    bundle, snap = snapshot(monkeypatch, tmp_path, sources=('ecosystems', 'ecosystems'), versions=True,
+                            shared_context=True, confirmed_version_index=0)
+    result = module.assess_readiness(bundle, snap, tmp_path / 'report')
+    items = read_jsonl(snap / 'items.jsonl')
+    assert len(items) == 12
+    assert {i['task']['document_id'] for i in items} == {'supplemental:10.1000/p1', 'supplemental:10.1000/p2'}
+    assert {(o['version_links'][0]['span']['start'], o['version_links'][0]['span']['end'])
+            for i in items for o in i['annotation']['occurrences']} == {(9, 13)}
+    assert result['support']['by_label']['VERSION'] == {'human_reviewed': 1, 'agent_provisional': 1}
+    assert result['support']['by_arm']['targeted']['by_label']['VERSION'] == {'human_reviewed': 1, 'agent_provisional': 1}
+    confirmed_parent = items[0]['task']['document_id']
+    for parent in ('supplemental:10.1000/p1', 'supplemental:10.1000/p2'):
+        assert result['support']['by_paper'][parent]['by_label']['VERSION'] == {
+            'human_reviewed': int(parent == confirmed_parent), 'agent_provisional': int(parent != confirmed_parent)}
+    assert result['version_goal']['explicit_spans'] == 2
+    assert result['supervision']['summary']['version_spans'] == 2
 
 
 def test_missing_local_tokenizer_is_explicit(monkeypatch, tmp_path):
