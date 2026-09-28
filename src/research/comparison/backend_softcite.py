@@ -83,10 +83,16 @@ class SoftciteBackend(HTTPBackend):
                 raise ValueError(f'inference HTTP {response.status_code}; unverified empty response is failure')
             payload = json.loads(response.text)
             raw['native'] = payload
-            if not isinstance(payload, dict) or not isinstance(payload.get('software'), list):
-                raise ValueError('Softcite response requires software array')
+            if not isinstance(payload, dict):
+                raise ValueError('Softcite response requires software or mentions array')
+            envelopes = [payload[key] for key in ('software', 'mentions') if key in payload]
+            if not envelopes or any(not isinstance(items, list) for items in envelopes):
+                raise ValueError('Softcite response requires software or mentions array')
+            if len(envelopes) == 2 and (json.dumps(envelopes[0], sort_keys=True, allow_nan=False)
+                                        != json.dumps(envelopes[1], sort_keys=True, allow_nan=False)):
+                raise ValueError('Softcite response has conflicting software and mentions arrays')
             spans = []
-            for mention in payload['software']:
+            for mention in envelopes[0]:
                 if not isinstance(mention, dict) or not isinstance(mention.get('software-name'), dict):
                     raise ValueError('software entry requires software-name object')
                 fields = [('SOFTWARE', mention['software-name'])]

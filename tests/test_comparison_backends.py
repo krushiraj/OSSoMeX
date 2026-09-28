@@ -243,6 +243,92 @@ def test_softcite_exact_offsets_multiple_versions_and_missing_scores():
     assert loaded['identity']['verified'] is False
 
 
+def test_softcite_081_mentions_warmup_envelope_is_explicit_empty_success():
+    body = '{ "application": "software-mentions", "version": "0.8.1", "date": "2026-09-28T07:46+0000", "mentions": [], "runtime": 2}'
+    backend, _, loaded = softcite([Response(body=body)])
+    result = backend.predict(window('We used NumPy.'))
+    assert result['status'] == 'no_mentions'
+    assert result['spans'] == [] and result['error'] is None
+    assert result['raw']['body'] == body
+    assert result['raw']['native'] == json.loads(body)
+    assert loaded['identity']['offset_unit'] == 'unverified'
+
+
+def test_softcite_081_nonempty_mentions_preserve_repeated_native_offsets():
+    text = ('ImageJ is an NIHfunded collaboration between several institutions, groups and individuals, '
+            'including Rasband.The ImageJ2 collaboration hopes to create more extensibility, modularity '
+            'and interoperability as well as extend ImageJ community resources.ImageJ2 retains the '
+            'interface of ImageJ but adds new')
+    attributes = {'created': {'score': 0.009934842586517334, 'value': False},
+                  'shared': {'score': 0.0001615285873413086, 'value': False},
+                  'used': {'score': 0.00048232078552246094, 'value': False}}
+    payload = {'application': 'software-mentions', 'version': '0.8.1',
+               'date': '2026-09-28T07:46+0000', 'runtime': 1885,
+               'mentions': [{'context': text, 'documentContextAttributes': attributes,
+                             'mentionContextAttributes': attributes, 'software-type': 'software',
+                             'type': 'software', 'software-name': {
+                                 'normalizedForm': 'ImageJ', **native('ImageJ', start, end)}}
+                            for start, end in [(0, 6), (113, 119), (221, 227), (248, 254), (281, 287)]]}
+    backend, _, _ = softcite([Response(payload)])
+    result = backend.predict(window(text))
+    assert result['status'] == 'success'
+    assert [(s['label'], s['start'], s['end']) for s in result['spans']] == [
+        ('SOFTWARE', 0, 6), ('SOFTWARE', 113, 119), ('SOFTWARE', 221, 227),
+        ('SOFTWARE', 248, 254), ('SOFTWARE', 281, 287)]
+    assert all(s['score'] is None and s['score_kind'] is None for s in result['spans'])
+    assert result['raw']['native'] == payload
+
+
+@pytest.mark.parametrize('envelope', ['software', 'mentions'])
+def test_softcite_envelopes_share_version_and_nullable_score_validation(envelope):
+    payload = {envelope: [
+        {'software-name': {**native('NumPy', 0, 5), 'confidence': None},
+         'version': {**native('1.2', 6, 9), 'confidence': None}, 'confidence': .99},
+        {'software-name': native('NumPy', 14, 19), 'version': native('2.0', 20, 23)},
+        {'software-name': native('Tool', 25, 29), 'version': None}]}
+    backend, _, _ = softcite([Response(payload)])
+    result = backend.predict(window('NumPy 1.2 and NumPy 2.0. Tool'))
+    assert result['status'] == 'success'
+    assert [(s['label'], s['text'], s['start'], s['end']) for s in result['spans']] == [
+        ('SOFTWARE', 'NumPy', 0, 5), ('VERSION', '1.2', 6, 9),
+        ('SOFTWARE', 'NumPy', 14, 19), ('VERSION', '2.0', 20, 23), ('SOFTWARE', 'Tool', 25, 29)]
+    assert all(s['score'] is None and s['score_kind'] is None for s in result['spans'])
+    assert result['raw']['native'] == payload
+
+
+@pytest.mark.parametrize('payload', [
+    {}, [], {'mentions': None}, {'mentions': {}}, {'mentions': '[]'}, {'mentions': [None]},
+    {'software': [], 'mentions': None}, {'software': None, 'mentions': []},
+    {'software': [], 'mentions': [{'software-name': native('NumPy', 0, 5)}]},
+    {'software': [{'software-name': native('NumPy', 0, 5)}], 'mentions': []},
+    {'software': [{'software-name': native('NumPy', 0, 5)}],
+     'mentions': [{'software-name': native('NumPy', 10, 15)}]},
+])
+def test_softcite_malformed_or_conflicting_envelopes_remain_failures(payload):
+    backend, _, _ = softcite([Response(payload)])
+    result = backend.predict(window('NumPy and NumPy'))
+    assert result['status'] == 'failure' and result['spans'] == [] and result['error']
+    assert result['raw']['native'] == payload
+    assert result['raw']['body'] == json.dumps(payload)
+
+
+@pytest.mark.parametrize('items', [[], [{'software-name': native('NumPy', 0, 5)}]])
+def test_softcite_identical_dual_envelopes_do_not_duplicate_spans(items):
+    backend, _, _ = softcite([Response({'software': items, 'mentions': deepcopy(items)})])
+    result = backend.predict(window('NumPy'))
+    assert result['status'] == ('success' if items else 'no_mentions')
+    assert len(result['spans']) == len(items)
+
+
+@pytest.mark.parametrize('envelope', ['software', 'mentions'])
+def test_softcite_envelopes_do_not_repair_invalid_version_offsets(envelope):
+    payload = {envelope: [{'software-name': native('NumPy', 0, 5), 'version': native('1.2', 0, 3)}]}
+    backend, _, _ = softcite([Response(payload)])
+    result = backend.predict(window('NumPy 1.2 and NumPy 1.2'))
+    assert result['status'] == 'failure' and result['spans'] == []
+    assert result['raw']['native'] == payload
+
+
 @pytest.mark.parametrize('name', [native('NumPy', 1, 6), {'rawForm': 'NumPy'},
                                  {'normalizedForm': 'NumPy', 'offsetStart': 0, 'offsetEnd': 5}])
 def test_softcite_never_searches_to_repair_offsets(name):
@@ -251,9 +337,10 @@ def test_softcite_never_searches_to_repair_offsets(name):
     assert result['status'] == 'failure' and result['spans'] == []
 
 
-def test_unknown_unicode_contract_is_not_certified_by_ascii_success():
-    backend, _, loaded = softcite([Response({'software': [{'software-name': native('NumPy', 0, 5)}]}),
-                                  Response({'software': [{'software-name': native('NumPy', 2, 7)}]})])
+@pytest.mark.parametrize('envelope', ['software', 'mentions'])
+def test_unknown_unicode_contract_is_not_certified_by_ascii_success(envelope):
+    backend, _, loaded = softcite([Response({envelope: [{'software-name': native('NumPy', 0, 5)}]}),
+                                  Response({envelope: [{'software-name': native('NumPy', 2, 7)}]})])
     assert backend.predict(window('NumPy'))['status'] == 'success'
     assert loaded['identity']['offset_unit'] == 'unverified'
     result = backend.predict(window('😀 NumPy'))
