@@ -124,6 +124,44 @@ def test_retry_after_waits_are_bounded(tmp_path, header, seconds, stop):
     assert len(session.calls) == (1 if stop else 2)
 
 
+@pytest.mark.parametrize('header', ['9' * 5000, '0' * 5000 + '61'],
+                         ids=['huge-ascii-number', 'huge-leading-zero-over-budget'])
+def test_huge_numeric_retry_after_records_stop_without_retry(tmp_path, header):
+    waits = []
+    destination = tmp_path / 'raw'
+    response = Response(503, body=b'server unavailable', headers={'Retry-After': header})
+    session = Session([response])
+    result = transport().fetch_snippet_response(URL, destination, policy=POLICY,
+                                               session=session, sleep=waits.append)
+    assert result['status'] == 'failed'
+    assert result['reason'] == 'retry_after_exceeds_budget'
+    assert result['stop_collection'] is True
+    assert len(session.calls) == 1 and waits == []
+    assert len(result['attempts']) == 1
+    attempt = result['attempts'][0]
+    assert attempt['headers']['Retry-After'] == header
+    assert attempt['http_status'] == 503 and attempt['body_complete'] is True
+    assert attempt['retry_after_seconds'] > 60
+    assert attempt['retry_after_seconds_capped'] is True
+    assert (destination / attempt['raw_path']).read_bytes() == b'server unavailable'
+    assert json.loads((destination / 'record.json').read_bytes()) == result
+
+
+@pytest.mark.parametrize('header,expected_wait', [
+    ('0' * 5000 + '12', 12), ('0' * 5000, 0), ('00060', 60),
+    ('²', 1), ('١٢', 1), ('１２', 1), ('12.5', 1), ('', 1),
+], ids=['huge-leading-zero-12', 'huge-zero', 'leading-zero-60', 'superscript',
+        'arabic-digits', 'fullwidth-digits', 'decimal-fraction', 'empty'])
+def test_retry_after_leading_zero_and_malformed_values(tmp_path, header, expected_wait):
+    waits = []
+    session = Session([Response(503, headers={'Retry-After': header}), Response()])
+    result = transport().fetch_snippet_response(URL, tmp_path / 'raw', policy=POLICY,
+                                               session=session, sleep=waits.append)
+    assert result['status'] == 'completed' and result['stop_collection'] is False
+    assert waits == [expected_wait]
+    assert result['attempts'][0]['headers']['Retry-After'] == header
+
+
 @pytest.mark.parametrize('url', [
     'http://api.openalex.org/funder-search?search=NumPy&page=1&per_page=5',
     URL + '&api_key=secret', URL + '&mailto=person@example.org', URL + '&page=2',

@@ -49,8 +49,13 @@ def _validate_url(url: str) -> None:
 def _retry_after(value: str | None, current: datetime) -> float | None:
     if value is None:
         return None
-    if value.strip().isdigit():
-        return int(value.strip())
+    decimal = value.strip()
+    if decimal.isascii() and decimal.isdecimal():
+        significant = decimal.lstrip('0') or '0'
+        # 61 is a capped over-budget marker; the original header stays in evidence.
+        if len(significant) > 2 or (len(significant) == 2 and significant > '60'):
+            return 61
+        return int(significant)
     try:
         date = parsedate_to_datetime(value)
         if date.tzinfo is None:
@@ -143,6 +148,9 @@ Filesystem publication errors propagate and never create a completed record.
                                  if k.lower() == 'retry-after'), None)
             delay = _retry_after(retry_header, now())
             attempt['retry_after_seconds'] = delay
+            attempt['retry_after_seconds_capped'] = (
+                delay == 61 and retry_header is not None
+                and retry_header.strip().isascii() and retry_header.strip().isdecimal())
             if status is not None and _quota_exhausted(status, bytes(body)):
                 reason = 'quota_exhausted'
                 record['stop_collection'] = True
