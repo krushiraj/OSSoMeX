@@ -370,3 +370,38 @@ def test_reference_report_refuses_failed_partial_manifest_with_false_status(tmp_
     (run / 'manifest.json').write_text(json.dumps(manifest))
     with pytest.raises(ValueError, match='status'):
         report.build_report(run, tmp_path / 'report')
+
+
+@pytest.mark.parametrize('change', ['add_auxiliary', 'mutate_auxiliary', 'replace_with_symlink'])
+def test_tokenizer_auxiliary_changes_block_terminal_publication(tmp_path, monkeypatch, change):
+    runner = importlib.import_module('research.comparison.runner')
+    from research.comparison.backends import sha256
+    docs, windows = fixture_inputs()
+    checkpoint = tmp_path / 'tokenizer'
+    checkpoint.mkdir()
+    names = ['tokenizer.json', 'tokenizer_config.json', 'config.json']
+    if change != 'add_auxiliary':
+        names.append('special_tokens_map.json')
+    files = []
+    for name in names:
+        (checkpoint / name).write_text('{}')
+        files.append({'path': name, 'sha256': sha256(b'{}')})
+    pinned = {'schema_version': 'detector-checkpoint-1', 'files': files}
+    data = json.dumps(pinned).encode()
+    (checkpoint / 'manifest.json').write_bytes(data)
+    identity = {'checkpoint': str(checkpoint), 'manifest_sha256': sha256(data), 'manifest': pinned, 'files': files}
+    external = tmp_path / 'external.json'
+    external.write_text('{}')
+    def mutate(self):
+        target = checkpoint / 'special_tokens_map.json'
+        if change == 'replace_with_symlink':
+            target.unlink()
+            target.symlink_to(external)
+        else:
+            target.write_text('{"pad_token": "CHANGED"}')
+    monkeypatch.setattr(FakeBackend, 'close', mutate)
+    with pytest.raises(ValueError, match='tokenizer|artifact'):
+        runner.run_comparison(docs, windows, [{'arm_id': 'a', 'config': {'native': True},
+                                              'comparison_context': {'tokenizer': identity}}], tmp_path / 'run',
+                              adapter_factory=lambda arm: FakeBackend(arm, []))
+    assert not (tmp_path / 'run/manifest.json').exists()

@@ -2,7 +2,7 @@
 
 from copy import deepcopy
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import subprocess
 import time
 
@@ -107,8 +107,48 @@ def verify_tokenizer(identity):
         raise ValueError('tokenizer manifest changed since freezing')
     if identity['files'] != identity['manifest']['files']:
         raise ValueError('tokenizer file identity mismatch')
+    names = [record['path'] for record in identity['files']]
+    if len(set(names)) != len(names) or 'manifest.json' in names:
+        raise ValueError('invalid tokenizer file inventory')
+    for name in names:
+        path = PurePosixPath(name)
+        if path.is_absolute() or '..' in path.parts or name != path.as_posix() or '\\' in name:
+            raise ValueError('unsafe tokenizer source path')
+    actual = set()
+    for path in root.rglob('*'):
+        if path.is_symlink() or not (path.is_file() or path.is_dir()):
+            raise ValueError('unsafe tokenizer source path')
+        if path.is_file():
+            actual.add(path.relative_to(root).as_posix())
+    if actual != set(names) | {'manifest.json'}:
+        raise ValueError('tokenizer file inventory differs from pinned manifest')
     for record in identity['files']:
         verified_path(root, record)
+    _verify_tokenizer_configuration(root, set(names))
+
+
+def _verify_tokenizer_configuration(root, names):
+    pending = [name for name in ('config.json', 'tokenizer_config.json') if name in names]
+    seen = set()
+    while pending:
+        name = pending.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        config = json.loads((root / name).read_bytes())
+        if not isinstance(config, dict):
+            raise ValueError('tokenizer configuration must be an object')
+        for key, value in config.items():
+            if value is None:
+                continue
+            if key in ('fast_tokenizer_files', 'configuration_files'):
+                if not isinstance(value, list) or any(not isinstance(item, str) or item not in names for item in value):
+                    raise ValueError('unpinned tokenizer configuration source path')
+                if key == 'configuration_files':
+                    pending.extend(value)
+            elif key.endswith(('_file', '_files')) or (key == 'init_inputs' and value):
+                # Constructor path overrides can resolve against the process cwd, outside the checkpoint.
+                raise ValueError('tokenizer configuration source path overrides are unsupported')
 
 
 def freeze_configuration(output, files, arms, context):

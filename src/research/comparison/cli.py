@@ -5,11 +5,10 @@ from pathlib import Path
 import time
 
 from ..data.artifacts import atomic_write_new
-from ..data.manifest import verified_path
 from .backends import REPO_ROOT, make_backend, resolve_arm, sha256
 from .report import build_report
 from .runner import (code_identity, freeze_configuration, freeze_prompts, json_bytes, load_backend,
-                     prepare_arms, publish, run_comparison, verify_files, verify_source)
+                     prepare_arms, publish, run_comparison, verify_files, verify_source, verify_tokenizer)
 from .windows import freeze_windows
 
 
@@ -62,14 +61,15 @@ def load_tokenizer(config):
     names = [record['path'] for record in files]
     if len(set(names)) != len(names) or not {'tokenizer.json', 'tokenizer_config.json', 'config.json'} <= set(names):
         raise ValueError('incomplete pinned tokenizer files')
-    for record in files:
-        verified_path(path, record)
+    identity = {'checkpoint': str(path), 'manifest_sha256': sha256(data), 'manifest': manifest,
+                'files': files, 'local_files_only': True, 'trust_remote_code': False}
+    verify_tokenizer(identity)
     from transformers import AutoTokenizer
     tokenizer = AutoTokenizer.from_pretrained(path, use_fast=True, local_files_only=True, trust_remote_code=False)
     if not tokenizer.is_fast or tokenizer.do_lower_case:
         raise ValueError('fast cased tokenizer required')
-    return tokenizer, {'checkpoint': str(path), 'manifest_sha256': sha256(data), 'manifest': manifest,
-                       'files': files, 'local_files_only': True, 'trust_remote_code': False}
+    verify_tokenizer(identity)
+    return tokenizer, identity
 
 
 def cmd_preflight(args):
