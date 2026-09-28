@@ -6,6 +6,7 @@ import io
 import json
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from queue import Queue
 
 import pytest
 from prompt_toolkit.input import create_pipe_input
@@ -199,6 +200,59 @@ def test_line_mode_terminator_normalization_and_eof(source, expected):
     assert [d['text'] for d in loaded[0].documents] == expected
     assert len(rows) == len(expected)
     assert ':submit' in stderr and 'normaliz' in stderr
+
+
+@pytest.mark.parametrize(('source', 'expected'), [
+    ('NumPy\r\n:submit\r\n\x04', ['NumPy\n']),
+    ('NumPy\r\n\r\n🧪 Python\r\n:submit\r\n\x04', ['NumPy\n\n🧪 Python\n']),
+    ('NumPy\n\nPython\n:submit\n\x04', ['NumPy\n\nPython\n']),
+    ('NumPy\r\n\nPython\r\n:submit\r\n\x04', ['NumPy\n\nPython\n']),
+    ('NumPy\r\n:submit\r\nPython\r\n:submit\r\n\x04', ['NumPy\n', 'Python\n']),
+    ('NumPy\r\x1b[D\n:submit\r\x04', ['NumPy\n\n']),
+])
+def test_plain_line_boundaries_normalize_only_crlf_pairs(source, expected):
+    status, loaded, rows, _ = run_keys(source, input_mode='lines')
+    assert status == 0
+    assert [d['text'] for d in loaded[0].documents] == expected
+    assert [row['text'] for row in rows] == expected
+
+
+def test_line_mode_crlf_pair_split_across_input_deliveries():
+    interactive = api()
+    resets = Queue()
+    stdout, stderr = io.StringIO(), io.StringIO()
+    detector = StubDetector(Path('checkpoint'), 'cpu')
+
+    with create_pipe_input() as pipe:
+        def run():
+            session = interactive.build_prompt_session(input=pipe, output=DummyOutput())
+            session.app.on_reset += lambda app: resets.put(None)
+            return interactive.run_interactive(Path('checkpoint'), 'cpu', 'lines',
+                                               detector_factory=lambda *args: detector,
+                                               prompt_session=session, stdin=Terminal(),
+                                               stdout=stdout, stderr=stderr)
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            result = executor.submit(run)
+            try:
+                resets.get(timeout=5)
+                pipe.send_text('NumPy\r')
+                resets.get(timeout=5)
+                # The next prompt has started before the matching LF arrives.
+                pipe.send_text('\n\r')
+                resets.get(timeout=5)
+                pipe.send_text('\n🧪 Python\r')
+                resets.get(timeout=5)
+                pipe.send_text('\n:submit\r')
+                resets.get(timeout=5)
+                pipe.send_text('\n\x04')
+                assert result.result(timeout=5) == 0
+            finally:
+                pipe.send_text('\x04')
+                pipe.close()
+
+    assert [document['text'] for document in detector.documents] == ['NumPy\n\n🧪 Python\n']
+    assert [json.loads(line)['text'] for line in stdout.getvalue().splitlines()] == ['NumPy\n\n🧪 Python\n']
 
 
 def test_non_tty_rejected_before_loading():

@@ -13,39 +13,61 @@ if TYPE_CHECKING:
 
 def build_prompt_session(*, input=None, output=None) -> 'PromptSession':
     from prompt_toolkit import PromptSession
+    from prompt_toolkit.filters import Condition, is_true
     from prompt_toolkit.history import DummyHistory
     from prompt_toolkit.key_binding import KeyBindings
     from prompt_toolkit.output.defaults import create_output
 
     bindings = KeyBindings()
+    preceding_cr = False
 
     @bindings.add('enter')
     def submit(event):
+        nonlocal preceding_cr
+        preceding_cr = not is_true(session.multiline)
         event.current_buffer.validate_and_handle()
+
+    @bindings.add('c-j', filter=Condition(lambda: not is_true(session.multiline)))
+    def linefeed(event):
+        nonlocal preceding_cr
+        # CR resets the prompt; a first-key LF in the next prompt completes that CRLF.
+        completes_crlf = preceding_cr and not event.previous_key_sequence
+        preceding_cr = False
+        if not completes_crlf:
+            event.current_buffer.validate_and_handle()
 
     @bindings.add('escape', 'enter')
     def newline(event):
+        nonlocal preceding_cr
+        preceding_cr = False
         event.current_buffer.insert_text('\n')
 
     @bindings.add('<bracketed-paste>')
     def paste(event):
+        nonlocal preceding_cr
+        preceding_cr = False
         # The upstream binding rewrites CRLF and CR; offsets require the delivered text.
         event.current_buffer.insert_text(event.data)
 
     @bindings.add('c-c')
     def cancel(event):
+        nonlocal preceding_cr
+        preceding_cr = False
         event.current_buffer.reset()
         event.app.exit(exception=KeyboardInterrupt())
 
     @bindings.add('c-d')
     def finish(event):
+        nonlocal preceding_cr
+        preceding_cr = False
         event.current_buffer.reset()
         event.app.exit(exception=EOFError())
 
-    return PromptSession(multiline=True, key_bindings=bindings, history=DummyHistory(),
-                         auto_suggest=None, enable_history_search=False,
-                         enable_open_in_editor=False, enable_system_prompt=False,
-                         input=input, output=output if output is not None else create_output(stdout=sys.stderr))
+    session = PromptSession(multiline=True, key_bindings=bindings, history=DummyHistory(),
+                            auto_suggest=None, enable_history_search=False,
+                            enable_open_in_editor=False, enable_system_prompt=False,
+                            input=input, output=output if output is not None else create_output(stdout=sys.stderr))
+    return session
 
 
 def read_draft(session, input_mode: str, *, stream: TextIO) -> str | None:
@@ -54,7 +76,7 @@ def read_draft(session, input_mode: str, *, stream: TextIO) -> str | None:
     lines = []
     while True:
         try:
-            text = session.prompt('text> ')
+            text = session.prompt('text> ', multiline=input_mode == 'bracketed')
         except EOFError:
             return None
         finally:
