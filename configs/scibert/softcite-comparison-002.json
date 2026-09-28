@@ -1,0 +1,12 @@
+{
+  "endpoint": "http://localhost:8060/service/processSoftwareText",
+  "health_endpoint": "http://localhost:8060/service/isalive",
+  "timeout_seconds": 180,
+  "health_timeout_seconds": 10,
+  "model_id": "softcite/software-mentions:0.8.1",
+  "model_notes": "Local Softcite 0.8.1; synthetic probe verifies UTF-16 offsets. Image digest and weights remain unverified.",
+  "offset_contract": {
+    "path": "configs/scibert/softcite-offset-contract-001.json",
+    "sha256": "6b818ca5c5083e8150c273bb686340fdffadb7718bd009cc9ea58ccc738ea4d5"
+  }
+}

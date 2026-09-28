@@ -1,0 +1,10 @@
+{
+  "schema_version": "comparison-config-1",
+  "tokenizer_checkpoint": "checkpoints/scibert-detector-002",
+  "max_content_tokens": 480,
+  "overlap_tokens": 64,
+  "warmup_text": "We used NumPy.",
+  "arms": [
+    {"arm_id": "softcite-0.8.1", "backend": "softcite", "config_path": "configs/softcite.json", "request_options": {}}
+  ]
+}

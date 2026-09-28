@@ -1,0 +1,29 @@
+{
+  "backend_id": "softcite/software-mentions:0.8.1",
+  "method": "synthetic_probe",
+  "offset_unit": "utf16",
+  "evidence": "The captured local Softcite response places MATLAB at native [11,17), while the exact frozen input has MATLAB at Unicode-codepoint [10,16). The preceding non-BMP emoji positively distinguishes UTF-16 from codepoint offsets. Version 9.0 independently matches native [26,29) and codepoint [25,28).",
+  "text": "🧪 We used MATLAB version 9.0 for statistical analysis.",
+  "span_text": "MATLAB",
+  "native_start": 11,
+  "native_end": 17,
+  "canonical_start": 10,
+  "canonical_end": 16,
+  "scope": "Observed local service on 2026-09-28; image and weight identity remain unverified. Re-probe after replacing the service.",
+  "synthetic": true,
+  "training_eligible": false,
+  "future_untouched_test_eligible": false,
+  "probe_input": {
+    "path": "inputs/scibert-v2/softcite-offset-probe-001.jsonl",
+    "sha256": "81a2970730ba12373211572dbdb17477baac46dec2d62eb40943639d80446a74"
+  },
+  "probe_manifest": {
+    "path": "runs/scibert-v2/softcite-offset-probe-002/manifest.json",
+    "sha256": "b3a2c33fab8fd069898eea08de0db430bd5e372b85ef90d5260556571184cd36"
+  },
+  "raw_response": {
+    "path": "runs/scibert-v2/softcite-offset-probe-002/raw/60e9320ea600b58525ee69b4e96b812b0b0ee3085f5a4d1ab973d483d798aae3.json",
+    "sha256": "b73c39f21c58bb10dc94818aa8bcb5b83266ae4a76bdc112a3ae29fe13b0c9cd"
+  },
+  "body_sha256": "ba6b5ca31a8e79fbd86562f7c31f95c12d5c74c9bcf92520a5dc64011100eba3"
+}
