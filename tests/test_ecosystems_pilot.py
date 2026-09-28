@@ -94,9 +94,17 @@ def test_cli_loads_exposure_reservations_and_checks_their_hashes(tmp_path):
     assert main(args)==2
     report=json.loads((tmp_path/'split/blocked.json').read_bytes())
     assert {r['split'] for r in report['shortages']}=={'dev','test'}
+    frozen={path.relative_to(tmp_path/'split'):path.read_bytes()
+            for path in (tmp_path/'split').rglob('*') if path.is_file()}
     (tmp_path/'reserved/documents.jsonl').write_text('{}\n')
+    fresh_output=tmp_path/'split-changed-source';fresh_private=tmp_path/'private-changed-source'
+    fresh_args=args[:-4]+['--output',str(fresh_output),'--private-output',str(fresh_private)]
     with pytest.raises(ValueError,match='missing or changed artifact'):
-        main(args)
+        main(fresh_args)
+    assert {path.relative_to(tmp_path/'split'):path.read_bytes()
+            for path in (tmp_path/'split').rglob('*') if path.is_file()}==frozen
+    assert not (tmp_path/'private').exists()
+    assert not fresh_output.exists() and not fresh_private.exists()
 
 
 def test_ecosystems_cli_is_available_and_reports_blocked(tmp_path,monkeypatch):
