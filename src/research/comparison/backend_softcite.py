@@ -81,7 +81,9 @@ class SoftciteBackend(HTTPBackend):
                 return window_result(window, raw=raw)
             if response.status_code != 200:
                 raise ValueError(f'inference HTTP {response.status_code}; unverified empty response is failure')
-            payload = json.loads(response.text)
+            body = response.content.decode('utf-8', errors='strict')
+            raw.update({'body': body, 'body_encoding': 'utf-8'})
+            payload = json.loads(body)
             raw['native'] = payload
             if not isinstance(payload, dict):
                 raise ValueError('Softcite response requires software or mentions array')

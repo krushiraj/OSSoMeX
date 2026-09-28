@@ -1,6 +1,7 @@
 """Offline boundary tests: no model construction or live service calls."""
 
 from copy import deepcopy
+import base64
 import hashlib
 import importlib
 import json
@@ -34,7 +35,18 @@ class Response:
     def __init__(self, payload=None, status=200, body=None):
         self.status_code = status
         self.text = json.dumps(payload) if body is None else body
+        self.content = self.text.encode('utf-8')
+        self.encoding = 'utf-8'
         self.headers = {'Content-Type': 'application/json'}
+
+
+def real_response(content, *, status=200, content_type='text/plain', encoding='ISO-8859-1'):
+    response = requests.Response()
+    response.status_code = status
+    response.headers['Content-Type'] = content_type
+    response._content = content
+    response.encoding = encoding
+    return response
 
 
 class Transport:
@@ -66,7 +78,7 @@ def softcite(responses, config=None, **extra):
 
 
 def ollama(contents, config=None, **extra):
-    responses = [c if isinstance(c, (Response, Exception)) else Response({'message': {'content': c}})
+    responses = [c if isinstance(c, (Response, requests.Response, Exception)) else Response({'message': {'content': c}})
                  for c in contents]
     transport = Transport(responses)
     backend = module('backend_ollama').OllamaBackend(transport=transport)
@@ -279,6 +291,77 @@ def test_softcite_081_nonempty_mentions_preserve_repeated_native_offsets():
     assert result['raw']['native'] == payload
 
 
+@pytest.mark.parametrize('unit,start,end,version_start,version_end', [
+    ('codepoint', 2, 6, 7, 10), ('utf16', 3, 7, 8, 11)])
+def test_softcite_utf8_json_ignores_requests_latin1_decoding_with_pinned_offsets(
+        unit, start, end, version_start, version_end, tmp_path):
+    evidence = tmp_path / 'offset-evidence.json'
+    evidence.write_text(json.dumps({'backend_id': 'pinned', 'offset_unit': unit,
+        'method': 'pinned_implementation', 'implementation_revision': 'fixture-revision',
+        'evidence': 'Reviewed implementation fixture.'}))
+    contract = {'path': str(evidence), 'sha256': hashlib.sha256(evidence.read_bytes()).hexdigest()}
+    payload = {'application': 'software-mentions', 'version': '0.8.1', 'mentions': [{
+        'software-name': native('Café', start, end),
+        'version': native('1.2', version_start, version_end), 'context': '🧪 Café 1.2'}]}
+    body = json.dumps(payload, ensure_ascii=False).encode('utf-8')
+    response = real_response(body)
+    assert 'CafÃ©' in response.text
+    backend, _, _ = softcite([response], {'model_id': 'pinned', 'offset_contract': contract})
+    result = backend.predict(window('🧪 Café 1.2'))
+    assert result['status'] == 'success'
+    assert [(s['label'], s['text'], s['start'], s['end']) for s in result['spans']] == [
+        ('SOFTWARE', 'Café', 2, 6), ('VERSION', '1.2', 7, 10)]
+    assert result['raw']['native'] == payload
+    assert result['raw']['body'] == body.decode('utf-8')
+    assert result['raw']['requests_body'] == response.text
+    assert result['raw']['requests_encoding'] == 'ISO-8859-1'
+    assert result['raw']['body_encoding'] == 'utf-8'
+    assert base64.b64decode(result['raw']['body_bytes_base64']) == body
+    assert result['raw']['body_sha256'] == hashlib.sha256(body).hexdigest()
+    assert result['raw']['headers'] == {'Content-Type': 'text/plain'}
+    assert result['raw']['status_code'] == 200
+
+
+def test_softcite_utf8_decoding_preserves_context_without_certifying_offset_unit():
+    payload = {'mentions': [{'software-name': native('MATLAB', 11, 17),
+                             'version': native('9.0', 26, 29),
+                             'context': '🧪 We used MATLAB version 9.0 for statistical analysis.'}]}
+    body = json.dumps(payload, ensure_ascii=False).encode('utf-8')
+    backend, _, loaded = softcite([real_response(body)])
+    result = backend.predict(window('🧪 We used MATLAB version 9.0 for statistical analysis.'))
+    assert result['status'] == 'failure' and result['error'] == 'unverified Unicode offset contract'
+    assert result['raw']['native'] == payload
+    assert loaded['identity']['offset_unit'] == 'unverified'
+
+
+@pytest.mark.parametrize('body', [b'{"mentions": [], "context":"\xff"}',
+                                '{"mentions": [], "context":"🧪"'.encode('utf-8'),
+                                '{"mentions": []}'.encode('utf-16')])
+def test_softcite_invalid_utf8_or_json_fails_without_losing_response_bytes(body):
+    response = real_response(body)
+    backend, _, _ = softcite([response])
+    result = backend.predict(window())
+    assert result['status'] == 'failure' and result['spans'] == []
+    assert base64.b64decode(result['raw']['body_bytes_base64']) == body
+    assert result['raw']['body_sha256'] == hashlib.sha256(body).hexdigest()
+    assert result['raw']['status_code'] == 200 and result['raw']['headers']['Content-Type'] == 'text/plain'
+    assert result['raw']['requests_body'] == response.text
+    assert result['raw']['requests_encoding'] == 'ISO-8859-1'
+    assert 'native' not in result['raw']
+
+
+def test_softcite_http_error_retains_exact_response_bytes():
+    body = b'error: \xff'
+    response = real_response(body, status=500)
+    backend, _, _ = softcite([response])
+    result = backend.predict(window())
+    assert result['status'] == 'failure' and 'HTTP 500' in result['error']
+    assert base64.b64decode(result['raw']['body_bytes_base64']) == body
+    assert result['raw']['body_sha256'] == hashlib.sha256(body).hexdigest()
+    assert result['raw']['body'] == response.text
+    assert result['raw']['body_encoding'] == 'ISO-8859-1'
+
+
 @pytest.mark.parametrize('envelope', ['software', 'mentions'])
 def test_softcite_envelopes_share_version_and_nullable_score_validation(envelope):
     payload = {envelope: [
@@ -465,6 +548,30 @@ def test_ollama_named_request_options_preserved_and_hashed():
     assert payload['options']['top_k'] == 7
     assert loaded['identity']['request_options_sha256']
     assert loaded['identity']['prompt_sha256']
+
+
+def test_ollama_real_utf8_response_keeps_existing_parse_semantics_and_exact_bytes():
+    content = json.dumps([record('Café', None, 'Café')], ensure_ascii=False)
+    payload = {'message': {'content': content}, 'done': True}
+    body = json.dumps(payload, ensure_ascii=False).encode('utf-8')
+    response = real_response(body, content_type='application/json', encoding='utf-8')
+    backend, _, _ = ollama([response])
+    result = backend.predict(window('Café'))
+    assert result['status'] == 'success'
+    assert [(s['text'], s['start'], s['end']) for s in result['spans']] == [('Café', 0, 4)]
+    assert result['raw']['body'] == response.text
+    assert result['raw']['native'] == payload and result['raw']['content'] == content
+    assert base64.b64decode(result['raw']['body_bytes_base64']) == body
+    assert result['raw']['body_sha256'] == hashlib.sha256(body).hexdigest()
+
+
+def test_ollama_invalid_json_retains_real_response_bytes():
+    body = b'{"message": {"content": "[]"'
+    backend, _, _ = ollama([real_response(body, content_type='application/json', encoding='utf-8')])
+    result = backend.predict(window())
+    assert result['status'] == 'failure'
+    assert result['raw']['body'] == body.decode('utf-8')
+    assert base64.b64decode(result['raw']['body_bytes_base64']) == body
 
 
 @pytest.mark.parametrize('response', [requests.ConnectionError('refused'), requests.Timeout('slow'), Response(status=302),

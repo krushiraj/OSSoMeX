@@ -1,6 +1,7 @@
 """Local comparison backend protocol, configuration and transport boundaries."""
 
 from copy import deepcopy
+import base64
 import hashlib
 import ipaddress
 import json
@@ -204,7 +205,14 @@ class HTTPBackend(ComparisonBackend):
         except requests.RequestException as exc:
             raw.update({'exception': type(exc).__name__, 'detail': str(exc)})
             raise
-        raw.update({'status_code': response.status_code, 'headers': dict(response.headers), 'body': response.text})
+        content = response.content
+        encoding = response.encoding or response.apparent_encoding
+        body = response.text
+        raw.update({'status_code': response.status_code, 'headers': dict(response.headers),
+                    'body': body, 'body_encoding': encoding,
+                    'requests_body': body, 'requests_encoding': encoding,
+                    'body_bytes_base64': base64.b64encode(content).decode('ascii'),
+                    'body_sha256': sha256(content)})
         return response
 
     def close(self):
