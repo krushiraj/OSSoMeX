@@ -8,7 +8,7 @@
   },
   "historical_documents": ["inputs/sofair/sofair_docs.jsonl", "inputs/somesci/somesci_docs.jsonl"],
   "near_duplicate_jaccard": 0.85,
-  "training_reservations": ["data/scibert-v2/ecosystems-pilot-002/bundle"],
+  "training_reservations": ["data/scibert-v2/ecosystems-pilot-002/bundle", "data/scibert-v2/ecosystems-expansion-001/bundle"],
   "text_access_decisions": null,
   "overlap_decisions": null
 }

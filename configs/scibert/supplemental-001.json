@@ -1,0 +1,6 @@
+{
+  "seed": 42,
+  "metadata_fallback": true,
+  "ecosystems_projects": {},
+  "annotation_policy": "annotations/scibert-v2/policy-2.1-d17.md"
+}

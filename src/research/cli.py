@@ -402,6 +402,8 @@ def main(argv: list[str] | None = None) -> int:
     register_annotations(sub)
     from .training.cli import register as register_detector
     register_detector(sub)
+    from .comparison.cli import register as register_comparison
+    register_comparison(sub)
 
     p = sub.add_parser("inventory")
     p.add_argument("--input", required=True)
