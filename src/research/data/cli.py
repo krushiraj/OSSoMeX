@@ -90,6 +90,8 @@ def _dispatch_workflow(args):
 
 def run(args):
     if args.data_command == 'split':
+        if any(path.exists() or path.is_symlink() for path in (args.output, args.private_output)):
+            raise FileExistsError('split outputs must be new')
         from .exposure import apply_split_exposures, load_exposures, verify_exposure_sources
         config = json.loads(args.config.read_bytes())
         docs = load_corpus(args.corpus)
@@ -139,8 +141,6 @@ def run(args):
                 verify_exposure_sources(loaded)
             write_once(args.output/'blocked.json', json_bytes(result))
         else:
-            if args.output.exists() or args.private_output.exists():
-                raise FileExistsError('split outputs must be new')
             for role in ('train','dev','test'):
                 destination = args.private_output if role == 'test' else args.output/role
                 for loaded in exposures:

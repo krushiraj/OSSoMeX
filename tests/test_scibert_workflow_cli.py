@@ -381,6 +381,41 @@ def test_split_blocked_report_retains_exposure_provenance(split_case, capsys):
     assert json.loads(capsys.readouterr().out) == report
 
 
+@pytest.mark.parametrize('existing', ['public', 'private', 'both'])
+@pytest.mark.parametrize('kind', ['directory', 'dangling_symlink'])
+def test_shortage_split_rejects_existing_destinations_before_assignment(split_case, monkeypatch, existing, kind):
+    from research.data import cli as data_cli
+    config, _, output, private_output, argv, _, _, _ = split_case
+    settings = json.loads(config.read_bytes())
+    settings['quotas']['ecosystems']['test'] = 2
+    config.write_text(json.dumps(settings))
+    destinations = {'public': [output], 'private': [private_output],
+                    'both': [output, private_output]}[existing]
+    for destination in destinations:
+        if kind == 'directory':
+            destination.mkdir()
+            (destination / 'frozen.json').write_bytes(b'{"frozen":true}\n')
+        else:
+            destination.symlink_to(destination.with_name(destination.name + '-absent'), target_is_directory=True)
+    def inventory():
+        return {path: ('symlink', str(path.readlink())) if path.is_symlink()
+                else path.read_bytes() if path.is_file() else 'directory'
+                for path in config.parent.rglob('*')}
+    frozen = inventory()
+    assignments = []
+    original_assign = data_cli.assign_splits
+    def assign(*args):
+        assignments.append(args)
+        return original_assign(*args)
+    monkeypatch.setattr(data_cli, 'assign_splits', assign)
+    try:
+        with pytest.raises(FileExistsError, match='split outputs must be new'):
+            main(argv)
+    finally:
+        assert inventory() == frozen
+        assert assignments == []
+
+
 def test_split_pin_matches_manifest_bytes_actually_loaded(split_case, monkeypatch):
     from research.data import exposure
     from research.data import cli as data_cli
