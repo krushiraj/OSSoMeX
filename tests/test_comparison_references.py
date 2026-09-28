@@ -212,7 +212,40 @@ def test_snapshot_field_coverage_is_independently_checked(tmp_path, bad):
     if bad == "unknown_versions":
         ref = references(tmp_path / "snapshot", [doc])[0]
         assert all(r["label"] != "VERSION" for r in ref["coverage"])
-        assert len([s for s in ref["spans"] if s["label"] == "VERSION"]) == 2
+        assert [(s["text"], s["start"], s["end"]) for s in ref["spans"] if s["label"] == "VERSION"] == [
+            ("2.0", 21, 24)]
     else:
         with pytest.raises(ValueError, match="coverage"):
             references(tmp_path / "snapshot", [doc])
+
+
+@pytest.mark.parametrize('masked', [True, False])
+def test_version_positive_recovery_respects_known_mask_without_full_coverage(tmp_path, masked):
+    from test_comparison_metrics import result, score, span
+
+    doc, item = fixture_item(fields=("software", "versions") if masked else ())
+    if masked:
+        for occurrence in item['annotation']['occurrences']:
+            occurrence['known']['versions'] = False
+            occurrence['version_status'] = 'ambiguous'
+    connection = store.open_store(tmp_path / 'review.sqlite')
+    try:
+        store.import_items(connection, [item], 'train')
+        store.export_reference(connection, tmp_path / 'snapshot')
+    finally:
+        connection.close()
+    before = {path.name: path.read_bytes() for path in (tmp_path / 'snapshot').iterdir()}
+    refs = references(tmp_path / 'snapshot', [doc])
+    predictions = [result(doc, [span(doc, 'VERSION', 8, 11), span(doc, 'VERSION', 21, 24)])]
+    label = score([doc], predictions, refs, kind='agent_provisional')['arms']['a']['labels']['VERSION']
+    assert label['positive_recovery'] == {
+        'eligible_positives': 0 if masked else 2, 'recovered': 0 if masked else 2, 'missed': 0,
+        'recovery_rate': None if masked else 1.0, 'eligible_documents': 0 if masked else 1}
+    assert label['operational'] == {'tp': 0, 'fp': 0, 'fn': 0,
+                                    'precision': None, 'recall': None, 'f1': None}
+    assert not any(region['label'] == 'VERSION' for region in refs[0]['coverage'])
+    if masked:
+        assert refs[0]['provenance']['unscored_version_candidates'] == [
+            {'mention_id': occurrence['mention_id'], 'known': False, 'version_status': 'ambiguous',
+             'version_links': occurrence['version_links']} for occurrence in item['annotation']['occurrences']]
+    assert {path.name: path.read_bytes() for path in (tmp_path / 'snapshot').iterdir()} == before

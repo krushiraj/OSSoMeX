@@ -2,6 +2,7 @@
 
 from collections import Counter
 import json
+import os
 from pathlib import Path
 
 from ..annotations.review_workflow import project_review
@@ -10,8 +11,9 @@ from ..annotations.supplemental import frozen_tasks
 from ..contracts import FIELDS
 from ..training.data import select_supervision
 from ..training.features import build_token_features
+from .artifacts import atomic_write_new
 from .exposure import exposure_reasons
-from .manifest import digest, json_bytes, verified_path, write_once
+from .manifest import digest, json_bytes, verified_path
 from .supplemental import load_supplemental, verify_supplemental_sources
 
 
@@ -127,7 +129,7 @@ def _alignment(documents, items):
 
 def assess_readiness(bundle: Path, snapshot: Path | None, output: Path) -> dict:
     bundle, output = Path(bundle), Path(output)
-    if output.exists():
+    if os.path.lexists(output):
         raise FileExistsError(output)
     loaded = load_supplemental(bundle)
     documents = loaded['documents']
@@ -209,7 +211,8 @@ def assess_readiness(bundle: Path, snapshot: Path | None, output: Path) -> dict:
             raise ValueError('SNAPSHOT_CHANGED_DURING_READ')
         for record in snapshot_provenance['files']:
             verified_path(snapshot, record)
-    write_once(output / 'report.json', json_bytes(report))
-    write_once(output / 'manifest.json', json_bytes({'status': 'reported',
+    output.mkdir(parents=True, exist_ok=False)
+    atomic_write_new(output / 'report.json', json_bytes(report))
+    atomic_write_new(output / 'manifest.json', json_bytes({'status': 'reported',
         'files': [{'path': 'report.json', 'sha256': digest((output / 'report.json').read_bytes())}]}))
     return report

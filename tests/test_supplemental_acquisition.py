@@ -235,7 +235,9 @@ def test_bad_project_identity_does_not_silently_fallback(monkeypatch, tmp_path):
             return fake(url, destination, policy)
         payload = json_bytes({'id': 28, 'project_url': project, 'name': 'ImageJ'})
         write_once(destination, payload)
-        return {'url': url, 'sha256': digest(payload)}
+        record = {'url': url, 'sha256': digest(payload)}
+        write_once(destination.with_name(destination.name + '.json'), json_bytes(record))
+        return record
     monkeypatch.setattr(module, 'fetch_public', fetch)
     report = module.collect_supplemental(cfg, output)
     assert report['targets']['ImageJ']['shortfall'] == 1

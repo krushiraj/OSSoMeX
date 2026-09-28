@@ -168,11 +168,12 @@ def _markdown(report, run, output):
                                  scored['denominators']['completed_only_documents']]) + ' |')
             lines.append('')
     else:
-        lines.extend(['## Agreement', '', '| Left arm | Right arm | Label | Intersection / union | Jaccard |', '| --- | --- | --- | --- | --- |'])
+        lines.extend(['## Agreement', '', '| Left arm | Right arm | Label | Intersection / union | Jaccard | Jointly valid documents / population |', '| --- | --- | --- | --- | --- | --- |'])
         for pair in report['agreement']['pairs']:
             for label, metric in pair['labels'].items():
                 lines.append('| ' + ' | '.join(_cell(v) for v in [pair['left_arm_id'], pair['right_arm_id'], label,
-                             f"{metric['intersection']} / {metric['union']}", metric['jaccard']]) + ' |')
+                             f"{metric['intersection']} / {metric['union']}", metric['jaccard'],
+                             f"{pair['label_jointly_valid_documents'][label]} / {pair['population_documents']}"]) + ' |')
     return '\n'.join(lines) + '\n'
 
 

@@ -3,18 +3,21 @@
 from collections import Counter
 from copy import deepcopy
 import json
+import os
 from pathlib import Path
 import random
 import re
+from tempfile import TemporaryDirectory
 from urllib.parse import unquote, urlencode, urlsplit
 
 from ..contracts import validate_document
 from .acquire import AcquisitionError, component_url, fetch_public
+from .artifacts import atomic_write_jsonl_new, atomic_write_new
 from .bundles import load_bundle, materialize_bundle
 from .ecosystems import API, EPMC, ExclusionIndex, ecosystem_url
 from .exposure import exposure_reasons, load_exposures, verify_exposure_sources
 from .jats import normalize_doi, read_jats, safe_xml
-from .manifest import digest, json_bytes, read_jsonl, verified_path, write_jsonl, write_once
+from .manifest import digest, json_bytes, read_jsonl, verified_path, write_once
 from .supplemental_passages import passage_candidates, select_passages
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -93,11 +96,23 @@ def _load_exposures(config):
 
 def _fetch(url, output, *, is_json=True):
     path = output / 'requests' / digest(url.encode())
-    record = fetch_public(url, path, {'max_bytes': 16 * 1024 * 1024,
-                                     **({'format': 'json'} if is_json else {})})
-    payload = path.read_bytes()
-    if len(payload) > 16 * 1024 * 1024 or digest(payload) != record['sha256'] or record['url'] != url:
-        raise ValueError('INVALID_REQUEST_EVIDENCE')
+    sidecar = path.with_name(path.name + '.json')
+    cached = os.path.lexists(path) or os.path.lexists(sidecar)
+    with TemporaryDirectory(prefix='supplemental-request-') as temporary:
+        staged = Path(temporary) / path.name
+        staged_sidecar = staged.with_name(staged.name + '.json')
+        for original, destination in ((path, staged), (sidecar, staged_sidecar)):
+            if os.path.lexists(original):
+                write_once(destination, original.read_bytes())
+        record = fetch_public(url, staged, {'max_bytes': 16 * 1024 * 1024,
+                                           **({'format': 'json'} if is_json else {})})
+        payload = staged.read_bytes()
+        sidecar_payload = staged_sidecar.read_bytes()
+        if len(payload) > 16 * 1024 * 1024 or digest(payload) != record['sha256'] or record['url'] != url:
+            raise ValueError('INVALID_REQUEST_EVIDENCE')
+        if not cached:
+            atomic_write_new(path, payload)
+            atomic_write_new(sidecar, sidecar_payload)
     return (json.loads(payload) if is_json else payload), {**record, 'path': str(path.relative_to(output))}
 
 
@@ -111,9 +126,9 @@ def _results(body):
 
 
 def _freeze(config, output, exposures):
-    write_once(output / 'config.json', json_bytes(config))
-    write_once(output / 'selection-policy.json', json_bytes(SELECTION_POLICY))
-    write_once(output / 'annotation-policy.md', (ROOT / POLICY).read_bytes())
+    atomic_write_new(output / 'config.json', json_bytes(config))
+    atomic_write_new(output / 'selection-policy.json', json_bytes(SELECTION_POLICY))
+    atomic_write_new(output / 'annotation-policy.md', (ROOT / POLICY).read_bytes())
     frames, issues = {}, []
     for target in ('metadata', *TARGETS):
         limit = 200 if target == 'metadata' else 20
@@ -147,10 +162,10 @@ def _freeze(config, output, exposures):
                 rows = _results(body)
             frame.update({'request': record, 'query_url': url, 'returned_count': len(rows),
                           'candidates': rows[:limit], 'status': 'frozen'})
-        except (AcquisitionError, ValueError, OSError) as exc:
+        except (AcquisitionError, ValueError) as exc:
             frame.update({'status': 'failed', 'code': str(exc)})
             issues.append({'stage': 'frame', 'target': target, 'code': str(exc)})
-        write_once(output / 'frames' / f'{target}.json', json_bytes(frame))
+        atomic_write_new(output / 'frames' / f'{target}.json', json_bytes(frame))
         frames[target] = frame
     verify_exposure_sources(exposures)
     _verify_config_source(config)
@@ -161,9 +176,13 @@ def _freeze(config, output, exposures):
 
 def freeze_candidate_frames(config: dict, output: Path) -> dict:
     config = deepcopy(config)
+    output = Path(output)
+    if os.path.lexists(output):
+        raise FileExistsError(output)
     _validate_config(config)
     exposures = _load_exposures(config)
-    return _freeze(config, Path(output), exposures)
+    output.mkdir(parents=True, exist_ok=False)
+    return _freeze(config, output, exposures)
 
 
 def _doi(value):
@@ -250,13 +269,11 @@ def _counts(requested, accepted):
 
 def collect_supplemental(config: dict, output: Path) -> dict:
     config, output = deepcopy(config), Path(output)
+    if os.path.lexists(output):
+        raise FileExistsError(output)
     _validate_config(config)
-    if (output / 'manifest.json').exists():
-        loaded = load_supplemental(output)
-        if loaded['config'] != config:
-            raise ValueError('SUPPLEMENTAL_CONFIG_MISMATCH')
-        return loaded['manifest']
     exposures = _load_exposures(config)
+    output.mkdir(parents=True, exist_ok=False)
     frozen = _freeze(config, output, exposures)
     docs, regions, selection, permitted = [], [], [], []
     issues = frozen['issues'].copy()
@@ -301,14 +318,14 @@ def collect_supplemental(config: dict, output: Path) -> dict:
                 docs.append(doc)
                 accepted += 1
                 arm_counts[frame['acquisition_arm']] += 1
-            except (AcquisitionError, ValueError, OSError) as exc:
+            except (AcquisitionError, ValueError) as exc:
                 issues.append({**provenance, 'code': str(exc), 'candidate': candidate})
         if target != 'metadata':
             targets[target] = _counts(1, accepted)
-    write_jsonl(output / 'issues.jsonl', issues)
-    write_jsonl(output / 'selection.jsonl', selection)
-    write_jsonl(output / 'regions.jsonl', regions)
-    write_jsonl(output / 'permitted-not-detector-ready.jsonl', permitted)
+    atomic_write_jsonl_new(output / 'issues.jsonl', issues)
+    atomic_write_jsonl_new(output / 'selection.jsonl', selection)
+    atomic_write_jsonl_new(output / 'regions.jsonl', regions)
+    atomic_write_jsonl_new(output / 'permitted-not-detector-ready.jsonl', permitted)
     for record in frozen['files']:
         verified_path(output, record)
     for doc in docs + [row['document'] for row in permitted]:
@@ -320,8 +337,12 @@ def collect_supplemental(config: dict, output: Path) -> dict:
     if (output / 'annotation-policy.md').read_bytes() != (ROOT / POLICY).read_bytes():
         raise ValueError('ANNOTATION_POLICY_CHANGED')
     if docs:
-        materialize_bundle({'documents': docs, 'role': 'train', 'heldout': {},
-                            'split_digest': digest(json_bytes([doc['source_ids'] for doc in docs]))}, output / 'bundle')
+        with TemporaryDirectory(prefix='supplemental-bundle-') as temporary:
+            staged = Path(temporary) / 'bundle'
+            materialize_bundle({'documents': docs, 'role': 'train', 'heldout': {},
+                                'split_digest': digest(json_bytes([doc['source_ids'] for doc in docs]))}, staged)
+            for name in ('documents.jsonl', 'manifest.json'):
+                atomic_write_new(output / 'bundle' / name, (staged / name).read_bytes())
     report = {
         'schema_version': SCHEMA, 'status': 'ready_for_annotation' if len(docs) == 12 else 'partial' if docs else 'failed',
         'paper_count': len(docs), 'passage_count': len(regions), 'passage_shortfall': 72 - len(regions),
@@ -338,7 +359,7 @@ def collect_supplemental(config: dict, output: Path) -> dict:
     }
     verify_exposure_sources(exposures)
     _verify_config_source(config)
-    write_once(output / 'manifest.json', json_bytes(report))
+    atomic_write_new(output / 'manifest.json', json_bytes(report))
     return report
 
 

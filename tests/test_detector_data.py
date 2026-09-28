@@ -319,13 +319,13 @@ def test_prepare_rechecks_sources_after_copying_before_terminal_manifest(tmp_pat
 
     config, documents = preparation_sources(tmp_path)
     config['exposure_bundles'] = [exposure_spec(tmp_path, documents, 'train_reserved')]
-    original = module.write_jsonl
+    original = module.atomic_write_jsonl_new
     def mutate_after_write(path, rows):
         original(path, rows)
         if path.name == 'exclusions.jsonl':
             source = tmp_path / 'exposures' / 'manifest.json'
             source.write_bytes(source.read_bytes() + b'\n')
-    monkeypatch.setattr(module, 'write_jsonl', mutate_after_write)
+    monkeypatch.setattr(module, 'atomic_write_jsonl_new', mutate_after_write)
     with pytest.raises(ValueError):
         module.prepare_data(config, tmp_path / 'training')
     assert not (tmp_path / 'training' / 'manifest.json').exists()

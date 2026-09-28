@@ -1,5 +1,6 @@
 """Publish complete immutable artifacts without replacing another publisher."""
 
+import json
 import os
 from pathlib import Path
 import tempfile
@@ -23,3 +24,8 @@ def atomic_write_new(path: Path, payload: bytes) -> None:
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
+
+
+def atomic_write_jsonl_new(path: Path, rows: list[dict]) -> None:
+    atomic_write_new(path, ''.join(json.dumps(row, ensure_ascii=False, sort_keys=True) + '\n'
+                                  for row in rows).encode())

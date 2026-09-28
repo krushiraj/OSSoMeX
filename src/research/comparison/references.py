@@ -103,13 +103,18 @@ def references_from_snapshot(snapshot: Path, documents: list[dict]) -> list[dict
             raise ValueError("snapshot context does not match frozen input")
         history = histories.get(task["task_id"], [])
         projection = project_review(item, history)
-        spans = {}
+        spans, unscored_versions = {}, []
         for occurrence in annotation["occurrences"]:
             candidates = [{"label": "SOFTWARE", "text": occurrence["name"], **occurrence["name_span"],
                            "review_kind": _review_kind(projection, occurrence, "software")}]
-            candidates.extend({"label": "VERSION", "text": edge["text"], **edge["span"],
-                               "review_kind": _review_kind(projection, occurrence, "versions")}
-                              for edge in occurrence["version_links"])
+            if occurrence['known']['versions']:
+                candidates.extend({"label": "VERSION", "text": edge["text"], **edge["span"],
+                                   "review_kind": _review_kind(projection, occurrence, "versions")}
+                                  for edge in occurrence["version_links"])
+            elif occurrence['version_links']:
+                unscored_versions.append({'mention_id': occurrence['mention_id'], 'known': False,
+                    'version_status': occurrence['version_status'],
+                    'version_links': deepcopy(occurrence['version_links'])})
             for span in candidates:
                 key = (span["label"], span["start"], span["end"])
                 if key not in spans or span["review_kind"] == "human_reviewed":
@@ -121,6 +126,7 @@ def references_from_snapshot(snapshot: Path, documents: list[dict]) -> list[dict
                       "covered_regions": deepcopy(annotation.get("covered_regions", [])),
                       "unresolved_regions": deepcopy(annotation.get("unresolved_regions", [])),
                       "annotator": deepcopy(annotation.get("annotator")),
+                      "unscored_version_candidates": unscored_versions,
                       "decision_ids": [row["payload"]["decision_id"] for row in history]}
         for key in ("exposed", "training_overlap", "selection_bias"):
             if key in task or key in document:

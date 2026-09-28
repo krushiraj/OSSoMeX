@@ -134,6 +134,9 @@ def test_report_verified_agreement_and_separate_reference_kinds(tmp_path):
     assert len(result['documents'][0]['arms']) == 2
     markdown = (tmp_path / 'agreement/report.md').read_text()
     assert 'NumPy works.' in markdown and 'raw/' in markdown and 'synthetic policy' in markdown
+    assert '| Jointly valid documents / population |' in markdown
+    assert '| a | ../../b | SOFTWARE | 0 / 0 | None | 1 / 2 |' in markdown
+    assert '| a | ../../b | VERSION | 0 / 0 | None | 1 / 2 |' in markdown
     reference = tmp_path / 'refs.jsonl'
     doc = fixture_inputs()[0][0]
     reference.write_text(json.dumps({'document_id': doc['document_id'], 'text_revision': doc['text_revision'],

@@ -1,10 +1,12 @@
 """Immutable, detector-only training inputs from validated review snapshots."""
 
 import json
+import os
 from pathlib import Path
 import re
 
 from ..annotations.snapshots import read_review_snapshot
+from ..data.artifacts import atomic_write_jsonl_new, atomic_write_new
 from ..data.bundles import load_bundle
 from ..data.ecosystems import ExclusionIndex
 from ..data.exposure import exposure_reasons, load_exposures, verify_exposure_sources
@@ -133,7 +135,8 @@ def select_supervision(documents, items):
 
 def prepare_data(config, output):
     output = Path(output)
-    if output.exists():
+    atomic_publication = 'exposure_bundles' in config
+    if (os.path.lexists(output) if atomic_publication else output.exists()):
         raise FileExistsError(output)
     documents, items, sources, copies, forbidden = [], [], [], {}, []
     exposures, exposure_provenance = [], []
@@ -190,13 +193,17 @@ def prepare_data(config, output):
         raise ValueError('unexpected detector support')
     for loaded in exposures:
         verify_exposure_sources(loaded)
+    if atomic_publication:
+        output.mkdir(parents=True, exist_ok=False)
+    write_artifact = atomic_write_new if atomic_publication else write_once
+    write_rows = atomic_write_jsonl_new if atomic_publication else write_jsonl
     for name, payload in copies.items():
-        write_once(output / name, payload)
-    write_once(output / 'config.json', json_bytes(effective_config))
-    write_once(output / 'forbidden.json', json_bytes(heldout))
-    write_jsonl(output / 'documents.jsonl', documents)
-    write_jsonl(output / 'items.jsonl', selected['items'])
-    write_jsonl(output / 'exclusions.jsonl', selected['excluded'])
+        write_artifact(output / name, payload)
+    write_artifact(output / 'config.json', json_bytes(effective_config))
+    write_artifact(output / 'forbidden.json', json_bytes(heldout))
+    write_rows(output / 'documents.jsonl', documents)
+    write_rows(output / 'items.jsonl', selected['items'])
+    write_rows(output / 'exclusions.jsonl', selected['excluded'])
     result = {'schema_version': 'detector-data-1', 'role': 'train', 'quality': 'provisional',
               'full_benchmark_ready': False, 'summary': selected['summary'], 'sources': sources,
               'forbidden_documents_checked': len(forbidden),
@@ -206,7 +213,7 @@ def prepare_data(config, output):
         result['exposure_bundles'] = exposure_provenance
     for loaded in exposures:
         verify_exposure_sources(loaded)
-    write_once(output / 'manifest.json', json_bytes(result))
+    write_artifact(output / 'manifest.json', json_bytes(result))
     return result
 
 
