@@ -137,7 +137,9 @@ def prepare_data(config, output):
         raise FileExistsError(output)
     documents, items, sources, copies, forbidden = [], [], [], {}, []
     exposures, exposure_provenance = [], []
-    for ordinal, spec in enumerate(_exposure_specs(config)):
+    exposure_specs = _exposure_specs(config)
+    effective_config = {**config, 'exposure_bundles': exposure_specs} if 'exposure_bundles' in config else config
+    for ordinal, spec in enumerate(exposure_specs):
         loaded = _load_pinned_exposure(spec)
         exposures.append(loaded)
         sources.append({'kind': 'exposure_bundles', **spec})
@@ -190,7 +192,7 @@ def prepare_data(config, output):
         verify_exposure_sources(loaded)
     for name, payload in copies.items():
         write_once(output / name, payload)
-    write_once(output / 'config.json', json_bytes(config))
+    write_once(output / 'config.json', json_bytes(effective_config))
     write_once(output / 'forbidden.json', json_bytes(heldout))
     write_jsonl(output / 'documents.jsonl', documents)
     write_jsonl(output / 'items.jsonl', selected['items'])

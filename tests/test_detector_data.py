@@ -280,6 +280,7 @@ def test_legacy_preparation_and_reload_omit_new_exposure_fields(tmp_path):
     assert 'exposure_bundles' not in manifest
     assert all(row['kind'] != 'exposure_bundles' for row in manifest['sources'])
     assert not any('exposure_bundles' in row['path'] for row in manifest['files'])
+    assert (output / 'config.json').read_bytes() == json_bytes(config)
     assert len(load_training_data(output)[2]) == 2
 
 
@@ -345,3 +346,29 @@ def test_reload_rechecks_training_parents_against_pinned_reservations(tmp_path):
     (output / 'manifest.json').write_bytes(json_bytes(manifest))
     with pytest.raises(ValueError, match='exposure.*overlap'):
         load_training_data(output)
+
+
+def test_relative_exposure_preparation_reloads_from_different_working_directory(tmp_path, monkeypatch):
+    from research.training.data import load_training_data, prepare_data
+
+    config, documents = preparation_sources(tmp_path)
+    absolute_spec = exposure_spec(tmp_path, documents, 'train_reserved')
+    config['exposure_bundles'] = [{**absolute_spec, 'path': 'exposures/manifest.json'}]
+    caller_config = deepcopy(config)
+    originals = {path: path.read_bytes() for root in (tmp_path / 'exposures', tmp_path / 'reservation-source')
+                 for path in root.iterdir()}
+    monkeypatch.chdir(tmp_path)
+    output = tmp_path / 'training'
+    manifest = prepare_data(config, output)
+    monkeypatch.chdir(tmp_path.parent)
+    _, loaded, items = load_training_data(output)
+    assert len(loaded) == 2 and len(items) == 2
+    assert config == caller_config
+    assert json.loads((output / 'config.json').read_bytes()) == {**caller_config, 'exposure_bundles': [absolute_spec]}
+    assert manifest['exposure_bundles'][0] == {**absolute_spec,
+        'frozen_path': 'sources/exposure_bundles-0/manifest.json'}
+    assert next(row for row in manifest['sources'] if row['kind'] == 'exposure_bundles') == {
+        'kind': 'exposure_bundles', **absolute_spec}
+    assert next(row for row in manifest['files'] if row['path'] == 'config.json')['sha256'] == digest(
+        (output / 'config.json').read_bytes())
+    assert {path: path.read_bytes() for path in originals} == originals
