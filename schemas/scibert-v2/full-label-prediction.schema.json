@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "full-label-prediction.schema.json",
+  "title": "Experimental full-label prediction envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "document_id", "text_revision", "run_id", "offset_unit", "checkpoint_sha256", "checkpoint_hashes", "capabilities", "label_support", "scores_calibrated", "quality_evaluated", "review_required", "review_reasons", "evidence_method", "stage_status", "detector_diagnostics", "field_predictions", "occurrences", "pair_predictions", "alias_predictions", "public_rows", "public_mappings", "exclusions", "public_contract_complete", "pipeline_complete", "status"],
+  "properties": {
+    "schema_version": {"const": "full-label-prediction-1"},
+    "document_id": {"type": "string", "minLength": 1},
+    "text_revision": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "run_id": {"type": "string", "minLength": 1},
+    "offset_unit": {"const": "unicode_codepoint_half_open"},
+    "checkpoint_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "checkpoint_hashes": {"type": "object", "minProperties": 1, "additionalProperties": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}},
+    "capabilities": {"type": "object", "additionalProperties": {"type": "boolean"}},
+    "label_support": {"type": "object", "required": ["detector", "linker", "intent", "sentiment", "alias"]},
+    "scores_calibrated": {"const": false},
+    "quality_evaluated": {"const": false},
+    "review_required": {"const": true},
+    "review_reasons": {"$ref": "#/$defs/reasons"},
+    "evidence_method": {"const": "model_input_context"},
+    "stage_status": {
+      "type": "object", "additionalProperties": false,
+      "required": ["detector", "linker", "intent", "sentiment", "alias"],
+      "properties": {"detector": {"$ref": "#/$defs/stage"}, "linker": {"$ref": "#/$defs/stage"}, "intent": {"$ref": "#/$defs/stage"}, "sentiment": {"$ref": "#/$defs/stage"}, "alias": {"$ref": "#/$defs/stage"}}
+    },
+    "detector_diagnostics": {"type": ["object", "null"]},
+    "field_predictions": {"type": "array", "items": {
+      "type": "object", "required": ["mention_id", "name", "name_span", "context_span", "context_sentence", "context_kind", "software", "versions", "intents", "sentiment"],
+      "properties": {"mention_id": {"type": "string"}, "name": {"type": "string", "minLength": 1}, "name_span": {"$ref": "#/$defs/span"}, "context_span": {"$ref": "#/$defs/span"}, "context_sentence": {"type": "string"}, "context_kind": {"enum": ["sentence", "paragraph", "table", "reference"]}, "software": {"$ref": "#/$defs/field"}, "versions": {"$ref": "#/$defs/field"}, "intents": {"$ref": "#/$defs/field"}, "sentiment": {"$ref": "#/$defs/field"}}
+    }},
+    "occurrences": {"type": "array", "items": {"type": "object", "required": ["schema_version", "mention_id", "name", "name_span", "version_links", "version_status", "intents", "sentiment", "scores", "run_id", "checkpoint_hashes", "calibration", "evidence"], "properties": {"schema_version": {"const": "2.0"}, "known": false, "version_status": {"enum": ["explicit", "absent"]}, "name_span": {"$ref": "#/$defs/span"}, "calibration": {"const": "uncalibrated"}}}},
+    "pair_predictions": {"type": "object", "additionalProperties": false, "required": ["linker"], "properties": {"linker": {"type": "array", "items": {"$ref": "#/$defs/pair"}}}},
+    "alias_predictions": {"type": "object", "additionalProperties": false, "required": ["pairs", "groups"], "properties": {
+      "pairs": {"type": "array", "items": {"allOf": [{"$ref": "#/$defs/pair"}, {"type": "object", "required": ["pair_id", "member_mention_ids", "relation_type", "preferred_mention_id", "preferred_name"], "properties": {"pair_id": {"type": "string"}, "member_mention_ids": {"type": "array", "minItems": 2, "maxItems": 2, "uniqueItems": true, "items": {"type": "string"}}, "relation_type": {"type": "null"}, "preferred_mention_id": {"type": "null"}, "preferred_name": {"type": "null"}}}]}},
+      "groups": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["group_id", "member_mention_ids", "contributing_pair_ids", "negative_chord_pair_ids", "relation_type", "preferred_mention_id", "preferred_name", "review_reasons"], "properties": {"group_id": {"type": "string"}, "member_mention_ids": {"type": "array", "minItems": 2, "uniqueItems": true, "items": {"type": "string"}}, "contributing_pair_ids": {"type": "array", "minItems": 1, "items": {"type": "string"}}, "negative_chord_pair_ids": {"type": "array", "items": {"type": "string"}}, "relation_type": {"type": "null"}, "preferred_mention_id": {"type": "null"}, "preferred_name": {"type": "null"}, "review_reasons": {"$ref": "#/$defs/reasons"}}}}
+    }},
+    "public_rows": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["name", "version", "context_sentence", "intents", "sentiment"], "properties": {"name": {"type": "string", "minLength": 1}, "version": {"type": ["string", "null"]}, "context_sentence": {"type": "string", "minLength": 1}, "intents": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["created", "used", "shared", "mentioned"]}}, "sentiment": {"enum": ["positive", "negative", "mixed", "not_expressed"]}}}},
+    "public_mappings": {"type": "array", "items": {"type": "object", "required": ["export_ordinal", "document_id", "mention_id", "version_edge_ordinal"], "properties": {"export_ordinal": {"type": "integer", "minimum": 0}, "document_id": {"type": "string"}, "mention_id": {"type": "string"}, "version_edge_ordinal": {"type": ["integer", "null"], "minimum": 0}}}},
+    "exclusions": {"type": "array", "items": {"type": "object", "required": ["stage", "feature_id", "first_id", "reason"], "properties": {"reason": {"type": "string", "minLength": 1}, "stage": {"enum": ["linker", "intent", "sentiment", "alias"]}}}},
+    "public_contract_complete": {"type": "boolean"},
+    "pipeline_complete": {"type": "boolean"},
+    "status": {"enum": ["success", "no_mentions", "partial", "failure"]}
+  },
+  "$defs": {
+    "reasons": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "span": {"type": "object", "additionalProperties": false, "required": ["start", "end"], "properties": {"start": {"type": "integer", "minimum": 0}, "end": {"type": "integer", "minimum": 1}}},
+    "status": {"enum": ["success", "partial", "not_applicable", "unavailable", "failed", "blocked"]},
+    "probability": {"type": "number", "minimum": 0, "maximum": 1},
+    "stage": {"type": "object", "additionalProperties": false, "required": ["status", "candidate_count", "completed_count", "occurrence_count", "reasons"], "properties": {"status": {"$ref": "#/$defs/status"}, "candidate_count": {"type": "integer", "minimum": 0}, "completed_count": {"type": "integer", "minimum": 0}, "occurrence_count": {"type": "integer", "minimum": 0}, "reasons": {"$ref": "#/$defs/reasons"}}},
+    "field": {"type": "object", "required": ["status", "value", "scores", "reasons", "context_span", "evidence_method"], "properties": {"status": {"$ref": "#/$defs/status"}, "scores": {"oneOf": [{"type": "null"}, {"type": "object", "additionalProperties": {"$ref": "#/$defs/probability"}}, {"type": "array", "items": {"$ref": "#/$defs/probability"}}]}, "reasons": {"$ref": "#/$defs/reasons"}, "context_span": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/span"}]}, "evidence_method": {"enum": ["model_input_context", null]}, "context_text": {"type": "string"}}, "allOf": [{"if": {"properties": {"status": {"const": "success"}}}, "then": {"properties": {"value": {"not": {"type": "null"}}, "scores": {"not": {"type": "null"}}}}, "else": {"properties": {"value": {"type": "null"}, "scores": {"type": "null"}, "reasons": {"minItems": 1}}}}]},
+    "pair": {"type": "object", "required": ["feature_id", "first_id", "second_id", "status", "scores", "label", "reasons", "context_span"], "properties": {"status": {"$ref": "#/$defs/status"}, "scores": {"type": ["object", "null"], "additionalProperties": {"$ref": "#/$defs/probability"}}, "context_span": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/span"}]}, "first_span": {"$ref": "#/$defs/span"}, "second_span": {"$ref": "#/$defs/span"}, "reasons": {"$ref": "#/$defs/reasons"}}, "allOf": [{"if": {"properties": {"status": {"const": "success"}}}, "then": {"properties": {"scores": {"type": "object"}, "label": {"type": "string"}}}, "else": {"properties": {"scores": {"type": "null"}, "label": {"type": "null"}, "reasons": {"minItems": 1}}}}]}
+  }
+}

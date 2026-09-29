@@ -100,12 +100,13 @@ def _failure_result(detector, document):
 
 
 def run_interactive(model: Path, device: str, input_mode: str, *, output_format='pretty', detector_factory=None,
-                    prompt_session=None, stdin=None, stdout=None, stderr=None) -> int:
+                    prompt_session=None, stdin=None, stdout=None, stderr=None, failure_factory=None,
+                    stop_on_failure=True, command_name='detector') -> int:
     stdin = sys.stdin if stdin is None else stdin
     stdout = sys.stdout if stdout is None else stdout
     stderr = sys.stderr if stderr is None else stderr
     if not stdin.isatty():
-        print('Interactive input requires a terminal; use detector predict --stdin for piped UTF-8 text.',
+        print(f'Interactive input requires a terminal; use {command_name} predict --stdin for piped UTF-8 text.',
               file=stderr, flush=True)
         return 2
     if input_mode not in ('bracketed', 'lines'):
@@ -156,11 +157,12 @@ def run_interactive(model: Path, device: str, input_mode: str, *, output_format=
             print('Inference interrupted; no result emitted.', file=stderr, flush=True)
             return 130
         except Exception as exc:
-            result = _failure_result(detector, document)
+            result = (_failure_result(detector, document) if failure_factory is None
+                      else failure_factory(detector, document, exc))
             print(f'Inference failed ({type(exc).__name__}).', file=stderr, flush=True)
         if submission > 1 and output_format == 'pretty':
             print(file=stdout)
         print(render_prediction(result, output_format), file=stdout, flush=True)
-        if result['status'] == 'failure':
+        if result['status'] == 'failure' and stop_on_failure:
             print('Inference failed; restart the command before another request.', file=stderr, flush=True)
             return 1

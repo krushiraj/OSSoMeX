@@ -402,6 +402,8 @@ def main(argv: list[str] | None = None) -> int:
     register_annotations(sub)
     from .training.cli import register as register_detector
     register_detector(sub)
+    from .training.full_label_cli import register as register_full_label
+    register_full_label(sub)
     from .comparison.cli import register as register_comparison
     register_comparison(sub)
 
