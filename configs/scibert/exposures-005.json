@@ -1,0 +1,76 @@
+{
+  "inputs": [
+    {
+      "kind": "bundle_manifest",
+      "path": "data/scibert-v2/ecosystems-pilot-002/bundle/manifest.json",
+      "role": "train_reserved",
+      "sha256": "205845b0131c16f05c9c3b63327ee07260cb658bc1f12d4b49e070184ac3fe30"
+    },
+    {
+      "kind": "bundle_manifest",
+      "path": "data/scibert-v2/ecosystems-expansion-001/bundle/manifest.json",
+      "role": "train_reserved",
+      "sha256": "7c400bd82d59a8f091e6534a40bed0265cd80fc65ec235096e56a967873ff9f6"
+    },
+    {
+      "kind": "documents_jsonl",
+      "path": "data/scibert-v2/corpus-001/documents.jsonl",
+      "role": "native_excluded",
+      "sha256": "9d2613f7845672b8976493c09ee7bce6040faaa1d7fd223976e338aa7d09553b"
+    },
+    {
+      "kind": "documents_jsonl",
+      "path": "inputs/sofair/sofair_docs.jsonl",
+      "role": "historical_exposed",
+      "sha256": "31927ea0ed0014007bb858a91b09ac8a97053127d5b37d48db96d22fe4c3c597"
+    },
+    {
+      "kind": "documents_jsonl",
+      "path": "inputs/somesci/somesci_docs.jsonl",
+      "role": "historical_exposed",
+      "sha256": "f15d3306be29a692f0358e34fecf8c6f6826acbb89cb1ab8e77143e2c39bd77f"
+    },
+    {
+      "kind": "diagnostic_inputs",
+      "path": "inputs/openalex_snippets_full.jsonl",
+      "role": "diagnostic",
+      "sha256": "fc0ce07705234f03ac24a443eee72ac1044ce0ba0255749decce1a5e263a8424"
+    },
+    {
+      "kind": "diagnostic_inputs",
+      "path": "inputs/dev/openalex_snippets_dev.jsonl",
+      "role": "diagnostic",
+      "sha256": "8a91a2aec82abac84185ce16b77bef6d739504c17b0e9d96bd19a8bee998415a"
+    },
+    {
+      "kind": "diagnostic_inputs",
+      "path": "runs/scibert-v2/openalex-parallel-probe-20260927-001/inputs.jsonl",
+      "role": "diagnostic",
+      "sha256": "f66c5b651d1e4ee0c288604a41064a2e69e3d5b5c8a80823ed9e7a3ffe5812de"
+    },
+    {
+      "kind": "bundle_manifest",
+      "path": "data/scibert-v2/supplemental-001/bundle/manifest.json",
+      "role": "train_reserved",
+      "sha256": "01bd0dd99db1e18ce0b4ab64718e915f150e25e45e7b7a2f0ac422d1dca58240"
+    },
+    {
+      "kind": "bundle_manifest",
+      "path": "data/scibert-v2/full-label-discovery-001/candidate-1/bundle/manifest.json",
+      "role": "train_reserved",
+      "sha256": "c9fdc32f81d374ba885f94bb69b06570be8e59c66701a93f550ccae0d5ef2673"
+    },
+    {
+      "kind": "diagnostic_inputs",
+      "path": "/Users/krushi/work/openalex-sw-mentions/reports/scibert-v2/cli-table-001/debug-inputs.jsonl",
+      "role": "diagnostic",
+      "sha256": "953331f6d0dec35d02c3fcd50bbfacc24c8271f50d28d238aad2d5dc7d57d5a7"
+    },
+    {
+      "kind": "diagnostic_inputs",
+      "path": "data/scibert-v2/cli-diagnostic-001/inputs.jsonl",
+      "sha256": "170020c8d312d19fb49e82f2be555b2831915e768899779ee41678a3ee4b0ae4",
+      "role": "diagnostic"
+    }
+  ]
+}

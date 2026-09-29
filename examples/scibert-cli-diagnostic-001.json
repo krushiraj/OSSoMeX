@@ -1,0 +1,76 @@
+{
+  "schema_version": "annotated-diagnostic-1",
+  "review_kind": "agent_provisional",
+  "purpose": "Exposed engineering diagnostic only. Not training, human gold, independent test, or a representative research benchmark.",
+  "normalization": "Manually transcribed from the supplied terminal transcript: terminal wrapping and carriage returns become spaces; wrapped prose is dehyphenated. The dense stack input is split at its three source paragraph boundaries. These are frozen comparison inputs, not recovered exact clipboard bytes.",
+  "source_transcript": "/Users/krushi/.codex/attachments/ca52a203-1ee7-48b1-8726-54ed54465a87/Pasted text.txt",
+  "source_pdf": "/Users/krushi/work/softcite_pdfs/softcite_corpus/latex/softcite_single.pdf",
+  "documents": [
+    {
+      "document_id": "cli-diagnostic-001:imagej",
+      "work_group_id": "user-imagej-source-unresolved",
+      "source_kind": "user_excerpt_unresolved_paper",
+      "annotated": "Much of the [[s1|ImageJ]] ecosystem, including the [[s2|ImageJ2]] platform and the plug-ins designed for it, can be run in a headless mode without visible [[s3|ImageJ]] components. All headless routines are discovered by the search service within [[s4|ImageJ2]] and integrated directly into [[s5|napari]] within a new [[s6|napari]] widget (Fig. 1a). By presenting these routines via this mechanism, [[s7|napari-imagej]] minimizes both the display footprint and the amount of [[s8|Java]] and [[s9|ImageJ]] terminology exposed to the user while maintaining comparable performance to usage from within the [[s10|ImageJ]] user interface (see for benchmarking analysis). Third-party plug-ins and scripts written for the [[s11|ImageJ2]] platform are also automatically exposed in the search results, maximizing extensibility.",
+      "links": [],
+      "attribute_proposals": {"default_intents": ["mentioned"], "sentiment": null, "aliases": null},
+      "review_notes": "Eleven explicit names, including both standalone napari occurrences and the complete napari-imagej name. Functional/performance descriptions need sentiment review. The source paper identity is unresolved."
+    },
+    {
+      "document_id": "cli-diagnostic-001:codet5",
+      "work_group_id": "user-codet5-source-unresolved",
+      "source_kind": "user_excerpt_unresolved_paper",
+      "annotated": "We develop [[s1|CodeT5+]], a new family of open code large language models for code understanding and generation tasks (see Fig. 1 for an overview and more architecture/pretraining details in Fig. 2 and Fig. 3). Based on the encoder-decoder architecture [Wang et al., 2021b], [[s2|CodeT5+]] is enhanced with the flexibility to operate in various modes for different downstream tasks through our proposed mixture of pretraining objectives on unimodal and bimodal data.",
+      "links": [],
+      "attribute_proposals": {"default_intents": ["created"], "sentiment": null, "aliases": null},
+      "review_notes": "We develop establishes created, including the same author's adjacent description. Open does not alone establish an explicit release. Enhanced flexibility needs sentiment adjudication. No version is present."
+    },
+    {
+      "document_id": "cli-diagnostic-001:python-citations",
+      "work_group_id": "local-softcite-single-fixture",
+      "source_kind": "purpose_built_stress_fixture",
+      "annotated": "Scientific computing is routinely carried out in [[s1|Python]], and the reference implementation of the language is commonly abbreviated in citations simply as [[s2|Python]]1. When a particular release matters, authors instead write the major version together with a citation marker, e.g. [[s3|Python]][[v1|3]]2, leaving the exact patch level to the reference list. Both forms differ from an explicit statement such as the experiments were executed under [[s4|Python]] [[v2|3.10.12]].",
+      "links": [["s3", "v1"], ["s4", "v2"]],
+      "attribute_proposals": {"default_intents": ["mentioned"], "sentiment": "not_expressed", "aliases": null},
+      "review_notes": "PDF formatting establishes Python plus citation 1; Python plus version 3 plus citation 2. Plain text loses this distinction. The last sentence is an illustrative statement, not evidence that this paper actually used Python."
+    },
+    {
+      "document_id": "cli-diagnostic-001:python-edited",
+      "work_group_id": "local-softcite-single-fixture",
+      "source_kind": "purpose_built_stress_fixture",
+      "annotated": "Scientific computing is routinely carried out in [[s1|Python]], and the reference implementation of the language is commonly abbreviated in citations simply as [[s2|Python]]1. When a particular release matters, authors instead write the major version together with a citation marker, e.g. [[s3|Python]][[v1|3]], leaving the exact patch level to the reference list. Both forms differ from an explicit statement such as the experiments were executed under [[s4|Python]] [[v2|3.10.12]].",
+      "links": [["s3", "v1"], ["s4", "v2"]],
+      "attribute_proposals": {"default_intents": ["mentioned"], "sentiment": "not_expressed", "aliases": null},
+      "review_notes": "User-edited variant of the previous input. Not an independent paper/example. Citation 2 removed but citation 1 retained."
+    },
+    {
+      "document_id": "cli-diagnostic-001:environment",
+      "work_group_id": "local-softcite-single-fixture",
+      "source_kind": "purpose_built_stress_fixture",
+      "annotated": "Our environment was provisioned under [[s1|Python]] [[v1|3.10.12]] on a workstation running [[s2|macOS]] [[v2|13.5]], with an earlier configuration evaluated under [[s3|Python]] [[v3|3.8.10]] and a legacy check under [[s4|Python]] [[v4|2.7.18]] for backward compatibility. We also observed behavioural differences between the [[v5|3.9.7]] and [[v6|3.11.4]] line releases of the interpreter. All dependencies were installed through the [[s5|pip]] package installer and recorded with the [[s6|pip]] freeze utility into a requirements.txt manifest; an equivalent environment was later rebuilt under [[s7|conda]] [[v7|23.3.1]] and exported as environment.yml. We further containerised the setup with [[s8|Docker]] [[v8|24.0.2]] to guarantee byte-identical rebuilds.",
+      "links": [["s1", "v1"], ["s2", "v2"], ["s3", "v3"], ["s4", "v4"], ["s7", "v7"], ["s8", "v8"]],
+      "ignored_versions": ["v5", "v6"],
+      "attribute_proposals": {"default_intents": ["used"], "sentiment": "not_expressed", "aliases": null},
+      "review_notes": "requirements.txt and environment.yml are files, not software. pip freeze is a command of pip, not a separate tool. Versions 3.9.7/3.11.4 refer to Python but the exact occurrence owner is ambiguous, so ownership scoring masks those two versions (not their detection)."
+    },
+    {
+      "document_id": "cli-diagnostic-001:arrays",
+      "work_group_id": "local-softcite-single-fixture",
+      "source_kind": "purpose_built_stress_fixture",
+      "annotated": "The core array operations relied on [[s1|NumPy]]; we used [[s2|numpy]] [[v1|1.24.3]] in the primary run and [[s3|numpy]] [[v2|1.21.2]] in an earlier draft. Numerical routines came from [[s4|SciPy]], initially [[s5|scipy]] [[v3|1.4.1]] and finally upgraded to [[s6|scipy]] [[v4|1.10.1]]. Data frames were manipulated with [[s7|pandas]] [[v5|2.0.3]] (a change from [[s8|pandas]] [[v6|1.5.2]]), while plotting employed [[s9|matplotlib]] [[v7|3.7.1]] and [[s10|seaborn]] [[v8|0.12.2]]. Statistical modelling used [[s11|statsmodels]] [[v9|0.14.0]], following a first pass with [[s12|statsmodels]] [[v10|0.12.2]].",
+      "links": [["s2", "v1"], ["s3", "v2"], ["s5", "v3"], ["s6", "v4"], ["s7", "v5"], ["s8", "v6"], ["s9", "v7"], ["s10", "v8"], ["s11", "v9"], ["s12", "v10"]],
+      "ignored_software": ["s1", "s4"],
+      "attribute_proposals": {"default_intents": ["used"], "sentiment": "not_expressed", "aliases": null},
+      "review_notes": "Only explicit local occurrence-version pairs are scored. General introductory NumPy/SciPy occurrences need adjudication on shared release descriptions, so their ownership is masked. Case variants alone do not create explicit-definition alias gold."
+    },
+    {
+      "document_id": "cli-diagnostic-001:ml",
+      "work_group_id": "local-softcite-single-fixture",
+      "source_kind": "purpose_built_stress_fixture",
+      "annotated": "Machine-learning baselines were fit with [[s1|scikit-learn]] [[v1|1.2.2]], reverting from an earlier [[s2|scikit-learn]] [[v2|0.24.2]] report to confirm robustness. Neural networks were trained in [[s3|PyTorch]] [[v3|2.0.1]] and compared against a reference model in [[s4|TensorFlow]] [[v4|2.13.0]]. Sequence models imported from the Hugging Face [[s5|transformers]] library used [[s6|transformers]] [[v5|4.29.0]]. Data ingestion touched [[s7|h5py]] [[v6|3.8.0]] and [[s8|netcdf4-python]] [[v7|1.6.2]] for netCDF archives, and remote fetches went through the [[s9|requests]] library ([[s10|requests]] [[v8|2.31.0]]). Some legacy notebooks s",
+      "links": [["s1", "v1"], ["s2", "v2"], ["s3", "v3"], ["s4", "v4"], ["s6", "v5"], ["s7", "v6"], ["s8", "v7"], ["s10", "v8"]],
+      "ignored_software": ["s5", "s9"],
+      "attribute_proposals": {"default_intents": ["used"], "sentiment": "not_expressed", "aliases": null},
+      "review_notes": "Preserve the actual truncated ending. Hugging Face is the vendor here; transformers is the library. netCDF archives refer to a data format. General introductory transformers/requests mentions have masked ownership pending adjudication, not checked absence."
+    }
+  ]
+}

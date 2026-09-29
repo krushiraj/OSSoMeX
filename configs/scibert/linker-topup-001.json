@@ -1,0 +1,28 @@
+{
+  "training_data": {
+    "path": "data/scibert-v2/full-label-training-001/manifest.json",
+    "sha256": "92c9524926562386bd6ca150a06b647f8ac23ee926c78409f600ee90b99e4980"
+  },
+  "exposures": {
+    "path": "data/scibert-v2/exposures-005/manifest.json",
+    "sha256": "210272b1081460373bad8fa985cd7cc794bea3751580b68753cd612531c14929"
+  },
+  "policy_sha256": "953fd119fbd9a4d3ddc0837c20f13ff1f3b48a9a0cf89059e154fb80c9601f04",
+  "selection": {
+    "seed": 42,
+    "signal_per_parent": 3,
+    "random_per_parent": 3,
+    "max_passages": 12,
+    "cues": [
+      "version",
+      "requirements.txt",
+      "Statsmodels",
+      "PythonQt",
+      "netcdf"
+    ],
+    "document_ids": [
+      "supplemental:10.1371/journal.pone.0348571",
+      "ecosystems:10.1186/s40478-018-0574-5"
+    ]
+  }
+}

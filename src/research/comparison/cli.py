@@ -26,6 +26,12 @@ def register(subparsers) -> None:
         if name == 'run':
             command.add_argument('--input', required=True)
         command.set_defaults(func=func)
+    links = commands.add_parser('links', help='Score native version ownership separately from span detection')
+    for key in ('run', 'references', 'output'):
+        links.add_argument('--' + key, required=True)
+    links.add_argument('--full-label', action='append', default=[], metavar='ARM=JSONL',
+                       help='Full-label CLI predictions on the exact frozen input population')
+    links.set_defaults(func=cmd_links)
 
 
 def _source(path):
@@ -128,4 +134,11 @@ def cmd_run(args):
 def cmd_report(args):
     result = build_report(Path(args.run), Path(args.output), references=Path(args.references) if args.references else None)
     print(json.dumps({'output': args.output, 'status': result['status'], 'mode': result['mode']}))
+    return 0
+
+
+def cmd_links(args):
+    from .link_report import build_link_report
+    build_link_report(args.run, args.references, args.full_label, args.output)
+    print(json.dumps({'output': args.output, 'status': 'reported', 'mode': 'version_link_diagnostic'}))
     return 0
