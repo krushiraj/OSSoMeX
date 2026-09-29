@@ -4,6 +4,11 @@ from html.parser import HTMLParser
 import pytest
 
 
+def test_long_report_navigation_does_not_animate_scroll():
+    from research.comparison.html_render import _CSS
+    assert 'scroll-behavior:smooth' not in _CSS
+
+
 class PageParser(HTMLParser):
     def __init__(self):
         super().__init__()

@@ -9,7 +9,7 @@ from urllib.parse import urlsplit
 _CSS = """
 :root{color-scheme:light;--paper:#f5f8fc;--white:#fff;--ink:#1c3047;--muted:#52667c;
 --rule:#cad6e5;--blue:#2459b3;--green:#176d54;--amber:#805900;--error:#a82d44}
-*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--paper);
+*{box-sizing:border-box}body{margin:0;background:var(--paper);
 color:var(--ink);font:16px/1.55 'Avenir Next','Trebuchet MS',Arial,sans-serif}
 a{color:var(--blue);text-underline-offset:.16em;overflow-wrap:anywhere}a:focus-visible,summary:focus-visible{
 outline:3px solid var(--blue);outline-offset:3px}h1,h2,h3,h4,p{margin-top:0}
