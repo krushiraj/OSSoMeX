@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 from typing import TYPE_CHECKING, TextIO
 
-from .json_output import render_prediction
+from .json_output import render_prediction, terminal_colors
 
 if TYPE_CHECKING:
     from prompt_toolkit import PromptSession
@@ -160,9 +160,9 @@ def run_interactive(model: Path, device: str, input_mode: str, *, output_format=
             result = (_failure_result(detector, document) if failure_factory is None
                       else failure_factory(detector, document, exc))
             print(f'Inference failed ({type(exc).__name__}).', file=stderr, flush=True)
-        if submission > 1 and output_format == 'pretty':
+        if submission > 1 and output_format != 'jsonl':
             print(file=stdout)
-        print(render_prediction(result, output_format), file=stdout, flush=True)
+        print(render_prediction(result, output_format, color=terminal_colors(stdout)), file=stdout, flush=True)
         if result['status'] == 'failure' and stop_on_failure:
             print('Inference failed; restart the command before another request.', file=stderr, flush=True)
             return 1

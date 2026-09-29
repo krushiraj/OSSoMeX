@@ -7,7 +7,7 @@ import sys
 
 from ..data.manifest import read_jsonl
 from .cli import read_stdin_document, write_predictions
-from .json_output import render_prediction
+from .json_output import render_prediction, terminal_colors
 
 
 def register(subparsers):
@@ -37,7 +37,8 @@ def register(subparsers):
     for command in (predict, interactive):
         command.add_argument('--model', required=True)
         command.add_argument('--device', choices=('auto', 'cpu', 'mps'), default='auto')
-        command.add_argument('--format', choices=('pretty', 'jsonl'), default='pretty')
+        command.add_argument('--format', choices=('pretty', 'jsonl', 'table'), default='pretty',
+            help='pretty JSON (default), compact JSONL, or table with automatic terminal colors; NO_COLOR=1 disables colors')
 
 
 def cmd_prepare(args):
@@ -73,9 +74,9 @@ def cmd_predict(args):
         print(json.dumps({'output': args.output, 'documents': len(results)}))
     else:
         for index, result in enumerate(results):
-            if index and args.format == 'pretty':
+            if index and args.format != 'jsonl':
                 print()
-            print(render_prediction(result, args.format))
+            print(render_prediction(result, args.format, color=terminal_colors(sys.stdout)))
     return int(any(result['status'] in ('partial', 'failure') for result in results))
 
 
