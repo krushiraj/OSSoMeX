@@ -41,7 +41,7 @@ def _validate_url(url: str) -> None:
     params = parse_qs(parts.query, keep_blank_values=True, strict_parsing=True)
     if set(params) != {'search', 'page', 'per_page'} or any(len(v) != 1 for v in params.values()):
         raise ValueError('disallowed OpenAlex request parameters')
-    if (params['search'][0] not in QUERIES or params['page'] != ['1']
+    if (params['search'][0] not in QUERIES or params['page'][0] not in {str(n) for n in range(1, 11)}
             or params['per_page'][0] not in {'1', '2', '3', '4', '5'}):
         raise ValueError('disallowed OpenAlex request bounds')
 

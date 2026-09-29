@@ -1,0 +1,39 @@
+{
+  "training_data": {
+    "path": "data/scibert-v2/full-label-training-002/manifest.json",
+    "sha256": "17768664c5c62ff57e525af22d5ab1da0d0227ebd201162f0fe2169e9d4d2794"
+  },
+  "exposures": {
+    "path": "data/scibert-v2/exposures-005/manifest.json",
+    "sha256": "210272b1081460373bad8fa985cd7cc794bea3751580b68753cd612531c14929"
+  },
+  "policy_sha256": "953fd119fbd9a4d3ddc0837c20f13ff1f3b48a9a0cf89059e154fb80c9601f04",
+  "selection": {
+    "seed": 42,
+    "starts_by_document": {
+      "ecosystems:10.1021/acsnano.0c10632": [39715, 38886, 41844],
+      "ecosystems:10.1021/acsomega.1c00991": [43288],
+      "ecosystems:10.1111/aos.14122": [9190],
+      "ecosystems:10.1186/s13568-016-0260-6": [575],
+      "ecosystems:10.1186/s12859-020-3513-y": [24773, 4197, 26854],
+      "ecosystems:10.1007/s00401-020-02226-7": [44647, 29636, 34980, 45871, 849],
+      "ecosystems:10.1186/s40478-018-0574-5": [41033, 35474, 8945],
+      "supplemental:10.34172/joddd.025.43997": [7113],
+      "supplemental:10.21315/mjms-05-2025-348": [49],
+      "supplemental:10.55730/1300-0144.6170": [14223],
+      "supplemental:10.21315/mjms-07-2025-563": [8107, 981],
+      "supplemental:10.3389/fmed.2025.1726962": [11410, 11237],
+      "supplemental:10.1371/journal.pone.0326834": [10250, 11176, 10584],
+      "supplemental:10.3390/s26010245": [10092, 39983, 26430],
+      "supplemental:10.3390/vetsci13010033": [15477, 8786, 13804],
+      "supplemental:10.1371/journal.pone.0348571": [403, 6807, 22350, 23255]
+    },
+    "negative_controls": [
+      "ecosystems:10.1186/s13568-016-0260-6|575",
+      "ecosystems:10.1007/s00401-020-02226-7|849",
+      "supplemental:10.21315/mjms-05-2025-348|49",
+      "supplemental:10.21315/mjms-07-2025-563|981",
+      "supplemental:10.3389/fmed.2025.1726962|11237"
+    ]
+  }
+}

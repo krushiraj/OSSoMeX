@@ -332,10 +332,11 @@ def _field_value(row, key):
     return str(value) if value is not None else 'unknown'
 
 
-def _field_table(fields, groups):
+def _field_table(fields, groups, *, scored=False):
     names = {row.get('mention_id'): str(row.get('name', 'unknown')) for row in fields}
-    parts = ['<h4 class="minor-heading">Other field outputs (unscored)</h4>',
-             '<p class="coverage-note">Native pipeline proposals; intent, sentiment and aliases have no score in this report.</p>']
+    parts = ['<h4 class="minor-heading">' + ('Native field outputs' if scored else 'Other field outputs (unscored)') + '</h4>',
+             '<p class="coverage-note">' + ('Native pipeline proposals; see selected-review aggregate field scores above.' if scored
+                                         else 'Native pipeline proposals; intent, sentiment and aliases have no score in this report.') + '</p>']
     if fields:
         parts.append('<div class="table-scroll field-table"><table><thead><tr>'
                      '<th scope="col">Software</th><th scope="col">Intent</th>'
@@ -361,7 +362,7 @@ def _field_table(fields, groups):
     return ''.join(parts)
 
 
-def _arm_output(source, document, arm, review_kind, *, open_by_default):
+def _arm_output(source, document, arm, review_kind, *, open_by_default, fields_scored=False):
     parts = [f'<details class="model-output"{" open" if open_by_default else ""}>'
              f'<summary>{_escape(arm["arm_id"])} {_status(arm["status"])}</summary>',
              f'<div class="source-text">{_highlight(source, arm.get("spans", []))}</div>']
@@ -381,12 +382,12 @@ def _arm_output(source, document, arm, review_kind, *, open_by_default):
         parts.append(_offset_edges(source, details.get('missed_edges', [])))
     parts.append(_notes(arm.get('notes', [])))
     if arm.get('fields') or arm.get('alias_groups'):
-        parts.append(_field_table(arm.get('fields', []), arm.get('alias_groups', [])))
+        parts.append(_field_table(arm.get('fields', []), arm.get('alias_groups', []), scored=fields_scored))
     parts.append('</details>')
     return ''.join(parts)
 
 
-def _document(document, models, review_kind, anchor):
+def _document(document, models, review_kind, anchor, field_scores=None):
     source = document['text']
     kinds = {model['arm_id']: model['kind'] for model in models}
     source_html = _highlight(source, document.get('reference_spans', []))
@@ -406,7 +407,8 @@ def _document(document, models, review_kind, anchor):
              _edge_list(source, document.get('reference_links', [])), _mask(source, document), '</section>',
              '<section class="model-panel"><div class="panel-heading">Model annotations on the same text</div>']
     parts.extend(_arm_output(source, document, arm, review_kind,
-                             open_by_default=kinds.get(arm['arm_id']) in ('pipeline', 'softcite')) for arm in arms)
+                             open_by_default=kinds.get(arm['arm_id']) in ('pipeline', 'softcite'),
+                             fields_scored=field_scores is not None and arm['arm_id'] in field_scores) for arm in arms)
     parts.extend(['</section></div><a class="back-link" href="#passages">Back to passages</a></article>'])
     return ''.join(parts)
 
@@ -446,6 +448,59 @@ def _appendix(appendix):
     return ''.join(parts)
 
 
+def _timing_table(rows):
+    parts = ['<section id="timing"><div class="section-head"><h2>Full-pipeline timing</h2>',
+             '<p>Document-level prediction after a synthetic warmup on the same frozen passages. Load and warmup are separate; '
+             'the warmup does not guarantee every attribute head was exercised. '
+             'Softcite load is a service health check, not cold model load. CPU/MPS and AMD64 service results are separate environments.</p></div>',
+             '<div class="table-scroll"><table><thead><tr><th>Device</th><th>Report arm / timing arm</th><th>Scheduled</th>',
+             '<th>Success</th><th>Failure</th><th>Median</th><th>P95</th><th>Successful/s</th><th>Load</th></tr></thead><tbody>']
+    for row in rows:
+        summary = row['summary']
+        load_label = 'service health' if row.get('load_semantics') == 'service_health_check_only' else 'local initialization'
+        client = str(row['device']) + ' / ' + str(row['hardware'].get('machine', 'unknown'))
+        device_label = 'Resident service; client ' + client if load_label == 'service health' else client
+        def timing_value(value):
+            return _count(None) if value is None else _escape(f'{value:.4g}')
+        parts.append('<tr><td>' + _escape(device_label) +
+                     '</td><td>' + _escape(row['arm_id']) + ' / ' + _escape(row['timing_arm_id']) +
+                     '</td><td>' + _count(summary.get('scheduled')) + '</td><td>' + _count(summary.get('successful')) +
+                     '</td><td>' + _count(summary.get('failed')) + '</td><td>' + timing_value(summary.get('latency_median_seconds')) +
+                     ' s</td><td>' + timing_value(summary.get('latency_p95_seconds')) + ' s</td><td>' +
+                     timing_value(summary.get('successful_per_second')) + '</td><td>' +
+                     timing_value(row.get('load_seconds')) + ' s (' + load_label + ')</td></tr>')
+    parts.append('</tbody></table></div></section>')
+    return ''.join(parts)
+
+
+def _field_score_table(scores):
+    parts = ['<section id="fields"><div class="section-head"><h2>Field scores</h2>',
+             '<p>Selected-review exact occurrences. Full-class macro is N/A when any reference class is missing; '
+             'observed-class macro is shown separately. Alias accuracy is conditional on reviewed endpoint pairs, not end-to-end.</p></div>',
+             '<div class="table-scroll"><table><thead><tr><th>Arm</th><th>Intent classes (TP / FP / FN)</th>',
+             '<th>Intent macro</th><th>Observed-class macro</th><th>Exact intent set</th>',
+             '<th>Sentiment classes (TP / FP / FN)</th><th>Sentiment macro</th><th>Sentiment observed-class macro</th><th>Complete occurrence F1</th>',
+             '<th>Alias pairs</th></tr></thead><tbody>']
+    for arm_id, score in scores.items():
+        intents, sentiment, aliases = score['intents'], score['sentiment'], score['aliases']
+        def classes(values):
+            return '<br>'.join(_escape(label) + ': ' + ' / '.join(_count(metric.get(key)) for key in ('tp', 'fp', 'fn'))
+                             + ' · ' + _score(metric.get('f1')) + ' · Support ' +
+                             _escape(metric.get('tp', 0) + metric.get('fn', 0)) for label, metric in values.items())
+        parts.append('<tr><td>' + _escape(arm_id) + '</td><td>' + classes(intents['per_label']) +
+                     '<div class="table-note">Missing: ' + _escape(', '.join(intents['missing_classes']) or 'none') + '</div></td><td>' +
+                     _score(intents['macro']['f1']) + '</td><td>' + _score(intents['observed_macro_f1']) +
+                     '</td><td>' + _score(intents['exact_set_accuracy']) + '</td><td>' + classes(sentiment['per_class']) +
+                     '<div class="table-note">Missing: ' + _escape(', '.join(sentiment['missing_classes']) or 'none') + '</div></td><td>' +
+                     _score(sentiment['macro_f1']) + '</td><td>' + _score(sentiment['observed_macro_f1']) +
+                     '</td><td>' + _score(score['complete_occurrence']['f1']) +
+                     '</td><td>' + _score(aliases['f1']) + '<div class="table-note">' +
+                     _escape(aliases['reviewed_pairs']) + ' reviewed pairs; ' +
+                     _escape(aliases['unreviewed_positive_predictions']) + ' unreviewed positives</div></td></tr>')
+    parts.append('</tbody></table></div></section>')
+    return ''.join(parts)
+
+
 def render_dashboard(data: dict) -> str:
     """Render verified comparison data as one portable HTML page.
 
@@ -462,6 +517,10 @@ def render_dashboard(data: dict) -> str:
     population = provenance.get('population_documents', len(documents))
     navigation = [('provenance', 'Provenance'), ('software', 'Software names'),
                   ('version', 'Versions'), ('links', 'Version owners'), ('passages', 'Passages')]
+    if data.get('field_scores') is not None:
+        navigation.insert(4, ('fields', 'Field scores'))
+    if data.get('timing_rows'):
+        navigation.insert(4, ('timing', 'Timing'))
     if data.get('feedback'):
         navigation.append(('feedback', 'Later feedback'))
     if data.get('appendix'):
@@ -496,13 +555,17 @@ def render_dashboard(data: dict) -> str:
     parts.append(_metric_section(data, 'software', 'Software names', 'Exact software span detection within the stated reference coverage.'))
     parts.append(_metric_section(data, 'version', 'Version spans', 'Exact version text detection; ownership is scored separately below.'))
     parts.append(_metric_section(data, 'links', 'Version owners', 'Exact software occurrence to version ownership within eligible reviewed regions.'))
+    if data.get('timing_rows'):
+        parts.append(_timing_table(data['timing_rows']))
+    if data.get('field_scores') is not None:
+        parts.append(_field_score_table(data['field_scores']))
     parts += ['<section id="passages"><div class="section-head"><h2>Passage review</h2>',
               '<p>Each track repeats the frozen source text so the highlighted output remains anchored to its original offsets.</p></div>',
               '<nav class="passage-index" aria-label="Passage index">']
     parts.extend(f'<a href="#passage-{index}">{_escape(document["document_id"])}</a>'
                  for index, document in enumerate(documents, 1))
     parts.append('</nav>')
-    parts.extend(_document(document, models, review_kind or 'agent_provisional', f'passage-{index}')
+    parts.extend(_document(document, models, review_kind or 'agent_provisional', f'passage-{index}', data.get('field_scores'))
                  for index, document in enumerate(documents, 1))
     parts.append('</section>')
     if data.get('feedback'):

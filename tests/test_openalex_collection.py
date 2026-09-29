@@ -165,7 +165,7 @@ def test_retry_after_leading_zero_and_malformed_values(tmp_path, header, expecte
 @pytest.mark.parametrize('url', [
     'http://api.openalex.org/funder-search?search=NumPy&page=1&per_page=5',
     URL + '&api_key=secret', URL + '&mailto=person@example.org', URL + '&page=2',
-    URL.replace('page=1', 'page=2'), URL.replace('api.openalex.org', 'evil.example'),
+    URL.replace('page=1', 'page=11'), URL.replace('api.openalex.org', 'evil.example'),
     URL.replace('api.openalex.org', 'user:password@api.openalex.org'),
     URL.replace('funder-search', 'works'), URL + '#fragment',
 ])
@@ -322,7 +322,7 @@ def test_mismatched_raw_hash_prevents_manifest(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize('key,value', [
-    ('page', 2), ('per_page', 6), ('snippets_per_work', 3), ('max_candidates', 101),
+    ('page', 11), ('per_page', 6), ('snippets_per_work', 3), ('max_candidates', 101),
     ('timeout_seconds', 36), ('max_retries', 3), ('max_concurrency', 3),
     ('max_bytes', 16777217), ('per_page', True), ('api_key', 'secret'),
     ('endpoint', 'https://api.openalex.org/works'),
@@ -371,6 +371,19 @@ def test_lower_work_and_snippet_limits_preserve_original_ranks(tmp_path, monkeyp
     assert result['counts']['candidates'] == result['counts']['rejected'] == 10
     assert result['counts']['documents'] == 0
     assert all('per_page=1' in session.calls[0][0] for session in sessions)
+    identities = read_jsonl(tmp_path / 'bundle' / 'identities.jsonl')
+    assert [row['source_ids']['openalex'] for row in identities] == ['W1']
+    assert all(item['work_rank'] == item['snippet_rank'] == 0 for item in identities[0]['source_associations'])
+
+
+@pytest.mark.parametrize('page', [2, 6, 10])
+def test_later_bounded_pages_reach_transport_and_are_frozen(tmp_path, monkeypatch, page):
+    config = {**CONFIG, 'page': page}
+    result, sessions = collect_fake(monkeypatch, tmp_path, [Response() for _ in range(10)], config)
+    assert result['counts']['completed_queries'] == 10
+    assert all(f'page={page}&per_page=5' in session.calls[0][0] for session in sessions)
+    plan = read_jsonl(tmp_path / 'bundle' / 'request-plan.jsonl')
+    assert all(f'page={page}&per_page=5' in row['url'] for row in plan)
     identities = read_jsonl(tmp_path / 'bundle' / 'identities.jsonl')
     assert [row['source_ids']['openalex'] for row in identities] == ['W1']
     assert all(item['work_rank'] == item['snippet_rank'] == 0 for item in identities[0]['source_associations'])

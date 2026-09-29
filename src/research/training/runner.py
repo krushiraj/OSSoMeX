@@ -133,6 +133,8 @@ def save_detector(model, tokenizer, output, config, report, provenance):
 
 
 def fit_detector(data, config, output, device='auto'):
+    if 'freeze_encoder' in config:
+        raise ValueError('freeze_encoder requires full-label train --stage detector')
     from huggingface_hub import snapshot_download
     validate_recipe(config)
     output, data = Path(output), Path(data)

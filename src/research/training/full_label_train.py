@@ -31,8 +31,13 @@ FIXED_RECIPE = {'seed': 42, 'epochs': 10, 'learning_rate': 5e-5, 'weight_decay':
 CAPABILITY_STAGE = {'version_linking': 'linker', 'intent': 'intent', 'sentiment': 'sentiment', 'aliases': 'alias'}
 
 
-def _recipe(config, device):
+def _recipe(config, device, stage):
     validate_recipe(config)
+    if 'freeze_encoder' in config:
+        if type(config['freeze_encoder']) is not bool:
+            raise ValueError('freeze_encoder must be boolean')
+        if stage != 'detector':
+            raise ValueError('freeze_encoder is supported for detector only')
     if not config.get('plumbing_test'):
         if any(config.get(key) != value for key, value in FIXED_RECIPE.items()) or (config['microbatch_size'], config['gradient_accumulation']) not in ((2, 16), (1, 32)):
             raise ValueError('fixed POC recipe required')
@@ -124,21 +129,31 @@ def _detector_support(rows):
 def train_stage_model(model, tokenizer, features, config, stage, device='mps', on_epoch=None):
     if stage not in ('detector', *STAGES):
         raise ValueError('unknown training stage')
-    _recipe(config, device)
+    _recipe(config, device, stage)
     features = _unique_features(features)
     support = _detector_support(features) if stage == 'detector' else summarize_support({stage: features})[stage]
     if not support['trainable']:
         raise ValueError('insufficient active class support: ' + ', '.join(support['unavailable_reasons']))
     device = choose_device(device)
     torch.manual_seed(config['seed'])
+    freeze_encoder = config.get('freeze_encoder', False) if stage == 'detector' else False
+    if stage == 'detector':
+        model.bert.requires_grad_(not freeze_encoder)
     model.to(device=device, dtype=torch.float32).train()
     before = _weight_hash(model)
+    if stage == 'detector':
+        before_encoder, before_head = _weight_hash(model.bert), _weight_hash(model.classifier)
+        encoder_parameters = sum(parameter.numel() for parameter in model.bert.parameters())
+        encoder_trainable = sum(parameter.numel() for parameter in model.bert.parameters() if parameter.requires_grad)
+        head_parameters = sum(parameter.numel() for parameter in model.classifier.parameters())
+        head_trainable = sum(parameter.numel() for parameter in model.classifier.parameters() if parameter.requires_grad)
+    trainable_parameters = [parameter for parameter in model.parameters() if parameter.requires_grad]
     micro, accumulation = config['microbatch_size'], config['gradient_accumulation']
     effective = micro * accumulation
     steps_per_epoch = max(config.get('min_steps_per_epoch', 10), math.ceil(len(features) / effective))
     total_steps = steps_per_epoch * config['epochs']
     draws = sample_features(features, config['seed'], total_steps * effective)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=config['learning_rate'], weight_decay=config['weight_decay'])
+    optimizer = torch.optim.AdamW(trainable_parameters, lr=config['learning_rate'], weight_decay=config['weight_decay'])
     warmup = min(total_steps - 1, math.ceil(total_steps * config['warmup_ratio']))
     scheduler = get_linear_schedule_with_warmup(optimizer, warmup, total_steps)
     started, cursor, effective_steps, steps, epochs = time.monotonic(), 0, 0, 0, []
@@ -161,7 +176,7 @@ def train_stage_model(model, tokenizer, features, config, stage, device='mps', o
                     raise ValueError('nonfinite or unsupported training loss')
                 losses.append(float(loss.detach().cpu()))
                 (loss / accumulation).backward()
-            norm = torch.nn.utils.clip_grad_norm_(model.parameters(), config['max_grad_norm'], error_if_nonfinite=True)
+            norm = torch.nn.utils.clip_grad_norm_(trainable_parameters, config['max_grad_norm'], error_if_nonfinite=True)
             if optimizer.param_groups[0]['lr'] > 0 and float(norm.detach().cpu()) > 0:
                 effective_steps += 1
             optimizer.step()
@@ -174,6 +189,17 @@ def train_stage_model(model, tokenizer, features, config, stage, device='mps', o
     after = _weight_hash(model)
     if effective_steps == 0 or before == after:
         raise ValueError('untrained stage: no effective updates or changed weights')
+    detector_report = {}
+    if stage == 'detector':
+        after_encoder, after_head = _weight_hash(model.bert), _weight_hash(model.classifier)
+        if freeze_encoder and before_encoder != after_encoder:
+            raise ValueError('frozen detector encoder weights changed')
+        detector_report = {'freeze_encoder': freeze_encoder,
+            'initial_encoder_sha256': before_encoder, 'final_encoder_sha256': after_encoder,
+            'initial_head_sha256': before_head, 'final_head_sha256': after_head,
+            'encoder_parameters': encoder_parameters, 'encoder_trainable_parameters': encoder_trainable,
+            'head_parameters': head_parameters, 'head_trainable_parameters': head_trainable,
+            'trainable_parameters': sum(parameter.numel() for parameter in trainable_parameters)}
     return {'optimizer_steps': steps, 'effective_optimizer_steps': effective_steps, 'warmup_steps': warmup,
         'weights_changed': before != after, 'initial_weights_sha256': before, 'final_weights_sha256': after,
         'epochs': epochs, 'device': device, 'dtype': 'float32', 'effective_batch_size': effective,
@@ -186,7 +212,7 @@ def train_stage_model(model, tokenizer, features, config, stage, device='mps', o
         'sampler': 'uniform_source_work_eligible_feature_with_replacement', 'support': support,
         'elapsed_seconds': time.monotonic() - started, 'peak_process_rss_bytes': resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
         'mps_determinism': 'not_guaranteed' if device == 'mps' else 'not_applicable',
-        'selection': 'fixed_final_epoch_no_dev', 'quality_evaluated': False}
+        'selection': 'fixed_final_epoch_no_dev', 'quality_evaluated': False, **detector_report}
 
 
 def _trained(report):
@@ -311,7 +337,7 @@ def fit_stage(stage: str, data: Path, config: dict, output: Path, device: str = 
     output, data = Path(output), Path(data)
     if output.exists():
         raise FileExistsError(output)
-    _recipe(config, device)
+    _recipe(config, device, stage)
     manifest, documents, items = load_training_data(data)
     initial_manifest_hash = digest((data / 'manifest.json').read_bytes())
     base, tokenizer = _load_base(config)

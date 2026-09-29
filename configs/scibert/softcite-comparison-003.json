@@ -1,0 +1,16 @@
+{
+  "endpoint": "http://localhost:8060/service/processSoftwareText",
+  "health_endpoint": "http://localhost:8060/service/isalive",
+  "timeout_seconds": 180,
+  "health_timeout_seconds": 10,
+  "model_id": "softcite/software-mentions:0.8.1",
+  "model_notes": "Installed image tag 0.8.1, bundled configuration 0.8.0, Wapiti software extractor with binary LinkBERT context classifiers. Linux amd64 Docker on arm64 host; deployment-specific timing only.",
+  "offset_contract": {
+    "path": "configs/scibert/softcite-offset-contract-001.json",
+    "sha256": "6b818ca5c5083e8150c273bb686340fdffadb7718bd009cc9ea58ccc738ea4d5"
+  },
+  "local_metadata": {
+    "path": "configs/scibert/softcite-local-metadata-001.json",
+    "sha256": "f408607eccff9c1e163ffab99a2b4334af57d8a4c4edcad04094fbc417170ae7"
+  }
+}

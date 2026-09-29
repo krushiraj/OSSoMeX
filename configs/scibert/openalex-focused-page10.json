@@ -1,0 +1,12 @@
+{
+  "endpoint": "https://api.openalex.org/funder-search",
+  "queries": ["java", "Python", "R", "ImageJ", "scikit-learn", "NumPy", "GROMACS", "MATLAB", "SPSS", "BLAST"],
+  "page": 10,
+  "per_page": 5,
+  "snippets_per_work": 1,
+  "max_candidates": 50,
+  "timeout_seconds": 35,
+  "max_retries": 2,
+  "max_concurrency": 1,
+  "max_bytes": 16777216
+}

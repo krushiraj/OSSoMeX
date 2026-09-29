@@ -36,6 +36,8 @@ def register(subparsers) -> None:
     for key in ('run', 'spans', 'output'):
         html.add_argument('--' + key, required=True)
     html.add_argument('--links', action='append', required=True, help='Version-link sidecar; repeat for compatible model iterations')
+    html.add_argument('--timing', action='append', default=[], metavar='DIRECTORY',
+                      help='Verified pipeline-timing-1 directory; repeat for CPU/MPS runs')
     html.add_argument('--appendix', help='Attributed capability examples JSON')
     html.add_argument('--notes', help='Attributed unscored feedback JSON')
     html.add_argument('--review-kind', choices=('agent_provisional', 'human_reviewed'), default='agent_provisional')
@@ -155,6 +157,7 @@ def cmd_links(args):
 def cmd_html(args):
     from .html_report import build_html_report
     build_html_report(args.run, args.spans, args.links, args.output,
-                      appendix=args.appendix, notes=args.notes, review_kind=args.review_kind)
+                      appendix=args.appendix, notes=args.notes, review_kind=args.review_kind,
+                      timing=args.timing)
     print(json.dumps({'output': args.output, 'status': 'reported', 'mode': 'offline_dashboard'}))
     return 0

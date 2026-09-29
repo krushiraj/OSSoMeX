@@ -1,9 +1,12 @@
 """Regenerate an offline dashboard from immutable, population-matched evidence."""
 
 import json
+from copy import deepcopy
 from pathlib import Path
 
 from ..data.artifacts import atomic_write_new
+from ..evaluation.metrics import evaluate_v2
+from .attributes import pipeline_occurrences, softcite_occurrences, score_alias_pairs
 from .backends import REPO_ROOT, sha256
 from .html_render import render_dashboard
 from .link_report import full_label_rows
@@ -12,6 +15,7 @@ from .metrics import score_reference
 from .references import REVIEW_KINDS
 from .report import _rows, _safe_path, _verified_run
 from .runner import json_bytes, publish, verify_files
+from .pipeline_timing import _summary as timing_summary
 
 
 def _sidecar(root, schema, run_hash):
@@ -136,8 +140,202 @@ def _verify_appendix(value, frozen):
     frozen['probe-report.json'] = payload
 
 
+def _timing_evidence(paths, documents, models, natives, configurations, frozen):
+    """Attach only document-identical, hash-joined timing arms."""
+    expected = {d['document_id']: d for d in documents}
+    rows_out = []
+    seen = set()
+    for index, path in enumerate(paths):
+        root = Path(path)
+        manifest_bytes = _safe_path(root, 'manifest.json').read_bytes()
+        manifest = json.loads(manifest_bytes)
+        if manifest.get('schema_version') != 'pipeline-timing-1':
+            raise ValueError('timing schema mismatch')
+        files = {}
+        for item in manifest['files']:
+            name = item['path']
+            if name in files or name == 'manifest.json':
+                raise ValueError('duplicate timing artifact')
+            payload = _safe_path(root, name).read_bytes()
+            if sha256(payload) != item['sha256']:
+                raise ValueError('timing artifact hash mismatch')
+            files[name] = payload
+        actual = {str(p.relative_to(root)) for p in root.rglob('*') if p.is_file()}
+        if actual != set(files) | {'manifest.json'}:
+            raise ValueError('timing artifact inventory mismatch')
+        if set(files) != {'inputs.jsonl', 'requests.jsonl', 'first_pass.jsonl', 'softcite-config.json'}:
+            raise ValueError('timing artifact inventory incomplete')
+        if (sha256(files['inputs.jsonl']) != manifest.get('input_file_sha256')
+                or sha256(files['softcite-config.json']) != manifest.get('softcite_config_sha256')):
+            raise ValueError('timing input/config hash mismatch')
+        timed_documents = _rows(files['inputs.jsonl'])
+        if (len(timed_documents) != len(expected) or
+                any(expected.get(d.get('document_id')) != d for d in timed_documents)):
+            raise ValueError('timing document population/text/revision mismatch')
+        order = manifest['order']
+        if sorted(order) != sorted(expected) or manifest['document_count'] != len(expected):
+            raise ValueError('timing document order/count mismatch')
+        requests, first_pass = _rows(files['requests.jsonl']), _rows(files['first_pass.jsonl'])
+        arm_ids = [a['arm_id'] for a in manifest['arms']]
+        if len(arm_ids) != len(set(arm_ids)):
+            raise ValueError('duplicate timing arm')
+        if manifest['repeats'] < 1 or manifest['batch_size'] != 1:
+            raise ValueError('invalid timing schedule')
+        expected_requests = [(a, repeat, d) for a in arm_ids
+                             for repeat in range(1, manifest['repeats'] + 1) for d in order]
+        if [(r.get('arm_id'), r.get('repeat'), r.get('document_id')) for r in requests] != expected_requests:
+            raise ValueError('timing request rows differ from schedule')
+        for row in requests:
+            doc = expected[row['document_id']]
+            if row.get('text_revision') != doc['text_revision'] or row.get('input_sha256') != doc['text_revision']:
+                raise ValueError('timing request revision mismatch')
+            elapsed = row.get('elapsed_seconds')
+            if elapsed is not None and (type(elapsed) not in (float, int) or elapsed < 0):
+                raise ValueError('invalid timing request elapsed seconds')
+        first_by_key = {(r['arm_id'], r['document_id']): r for r in first_pass}
+        if len(first_by_key) != len(first_pass):
+            raise ValueError('duplicate timing first pass')
+        active_arms = {a['arm_id'] for a in manifest['arms'] if a.get('load_status') == 'ready' and
+                       a.get('warmup_status') in (None, 'success', 'no_mentions')}
+        if set(first_by_key) != {(arm_id, doc_id) for arm_id in active_arms for doc_id in expected}:
+            raise ValueError('timing first pass population mismatch')
+        for (arm_id, doc_id), first in first_by_key.items():
+            if first.get('input_sha256') != expected[doc_id]['text_revision']:
+                raise ValueError('timing first pass revision mismatch')
+            native = first.get('native')
+            if isinstance(native, dict):
+                if native.get('document_id', native.get('window_id')) != doc_id:
+                    raise ValueError('timing native document identity mismatch')
+                if native.get('document_id') is not None and native.get('text_revision') != expected[doc_id]['text_revision']:
+                    raise ValueError('timing native revision mismatch')
+        for arm in manifest['arms']:
+            own_rows = [r for r in requests if r['arm_id'] == arm['arm_id']]
+            if json_bytes(timing_summary(own_rows)) != json_bytes(arm['summary']):
+                raise ValueError('timing summary differs from request rows')
+            if arm['arm_id'] == 'softcite':
+                matches = [m for m in models if m['kind'] == 'softcite' and
+                           configurations[m['arm_id']]['config_source']['sha256'] == manifest['softcite_config_sha256']]
+            else:
+                checkpoint = arm.get('checkpoint_manifest_sha256')
+                matches = [m for m in models if m['kind'] == 'pipeline' and
+                           m['identity']['checkpoint_sha256'] == checkpoint]
+            if len(matches) != 1:
+                raise ValueError('unmatched timing checkpoint/config identity')
+            model = matches[0]
+            if (index, arm['arm_id']) in seen:
+                raise ValueError('duplicate timing join')
+            seen.add((index, arm['arm_id']))
+            if model['kind'] == 'pipeline':
+                for doc_id in expected:
+                    first = first_by_key.get((arm['arm_id'], doc_id))
+                    if first and first.get('measurement_error') is None:
+                        measured, scored_native = first.get('native'), natives[(model['arm_id'], doc_id)]
+                        if (not isinstance(measured, dict) or measured.get('document_id') != doc_id
+                                or measured.get('text_revision') != expected[doc_id]['text_revision']):
+                            raise ValueError('timing native input identity mismatch')
+                        if (measured.get('checkpoint_hashes') is not None and
+                                measured['checkpoint_hashes'] != scored_native.get('checkpoint_hashes')):
+                            raise ValueError('timing native stage identity mismatch')
+            joined = {'timing_arm_id': arm['arm_id'], 'arm_id': model['arm_id'],
+                      'device': manifest['hardware']['device'], 'hardware': manifest['hardware'],
+                      'load_seconds': arm.get('load_seconds'), 'load_semantics': arm.get('load_semantics'),
+                      'load_status': arm.get('load_status'), 'summary': arm['summary'],
+                      'policy': manifest['timing_policy']}
+            model['timing'] = [*(model.get('timing') or [])] + [joined]
+            rows_out.append(joined)
+        frozen[f'timing-{index}/manifest.json'] = manifest_bytes
+        frozen.update({f'timing-{index}/{name}': payload for name, payload in files.items()})
+    return rows_out
+
+
+def _field_evidence(documents, refs, models, natives, by_result, review_kind):
+    if not any('attribute_occurrences' in ref for ref in refs):
+        return None
+    if any(not {'attribute_occurrences', 'attribute_coverage', 'alias_pairs'} <= ref.keys() for ref in refs):
+        raise ValueError('attribute reference population incomplete')
+    gold = [row for ref in refs for row in ref['attribute_occurrences']
+            if row.get('review', {}).get('status', row.get('review_kind')) == review_kind]
+    coverage = [row for ref in refs for row in ref['attribute_coverage'] if row.get('review_kind') == review_kind]
+    masked_documents = sorted(ref['document_id'] for ref in refs if ref.get('ignored_versions'))
+    gold, coverage = deepcopy(gold), deepcopy(coverage)
+    for row in gold:
+        if row['document_id'] in masked_documents:
+            row['known']['versions'] = False
+            row['version_status'] = 'ambiguous'
+    for row in coverage:
+        if row['document_id'] in masked_documents:
+            row['fields']['versions'] = False
+    aliases = []
+    for ref in refs:
+        for pair in ref['alias_pairs']:
+            if pair.get('review', {}).get('status', pair.get('review_kind')) != review_kind or pair.get('known') is not True:
+                continue
+            members = pair['members']
+            if len(members) != 2:
+                raise ValueError('reviewed alias pair requires two endpoints')
+            aliases.append({'document_id': pair['document_id'],
+                            'left': [members[0]['span']['start'], members[0]['span']['end']],
+                            'right': [members[1]['span']['start'], members[1]['span']['end']],
+                            'label': pair['decision']})
+    scores = {}
+    for model in models:
+        if model['kind'] not in ('pipeline', 'softcite'):
+            continue
+        predictions, statuses, positive_aliases = [], [], []
+        pipeline_capabilities = None
+        for doc in documents:
+            ident = doc['document_id']
+            if model['kind'] == 'pipeline':
+                native = natives[(model['arm_id'], ident)]
+                if not isinstance(native.get('capabilities'), dict):
+                    raise ValueError('missing pipeline capabilities')
+                if pipeline_capabilities is not None and pipeline_capabilities != native['capabilities']:
+                    raise ValueError('inconsistent pipeline capabilities')
+                pipeline_capabilities = native['capabilities']
+                predictions.extend(pipeline_occurrences(doc, native))
+                statuses.append({'document_id': ident, 'status': native['status']})
+                for pair in native.get('alias_predictions', {}).get('pairs', []):
+                    if pair.get('status') == 'success' and pair.get('label') == 'alias':
+                        positive_aliases.append({'document_id': ident,
+                            'left': [pair['first_span']['start'], pair['first_span']['end']],
+                            'right': [pair['second_span']['start'], pair['second_span']['end']],
+                            'label': 'alias'})
+            else:
+                result = by_result[(model['arm_id'], ident)]
+                if result['status'] in ('success', 'no_mentions'):
+                    offset_unit = model['identity'].get('offset_unit')
+                    if offset_unit not in ('codepoint', 'unicode_codepoint_half_open', 'utf16'):
+                        if not doc['text'].isascii():
+                            raise ValueError('Softcite field scoring requires verified Unicode offset unit')
+                        offset_unit = 'codepoint'
+                    predictions.extend(softcite_occurrences(doc, result['chunks'], offset_unit))
+                statuses.append({'document_id': ident, 'status': result['status']})
+        capabilities = {'software': True, 'versions': True, 'version_offsets': True,
+                        'intents': True, 'sentiment': model['kind'] == 'pipeline'}
+        if pipeline_capabilities is not None:
+            capabilities = {'software': pipeline_capabilities.get('software_spans') is True,
+                            'versions': pipeline_capabilities.get('version_linking') is True,
+                            'version_offsets': pipeline_capabilities.get('version_linking') is True,
+                            'intents': pipeline_capabilities.get('intent') is True,
+                            'sentiment': pipeline_capabilities.get('sentiment') is True}
+        scored = evaluate_v2(documents, gold, predictions, coverage, statuses, capabilities)
+        scored['version_field_masked_documents'] = masked_documents
+        scored['aliases'] = score_alias_pairs(aliases, positive_aliases,
+            supported=pipeline_capabilities is not None and pipeline_capabilities.get('aliases') is True)
+        scores[model['arm_id']] = scored
+    return scores
+
+
+def _reference_limit(refs):
+    if refs and all(ref.get('provenance', {}).get('source_only') is True and
+                    ref.get('provenance', {}).get('prediction_exposed') is False for ref in refs):
+        return ('Source-only fresh diagnostic sample with agent-provisional references. '
+                'This report does not establish held-out quality or general model superiority.')
+    return 'Development diagnostic, not a held-out benchmark. No general superiority claim follows from these scores.'
+
+
 def build_html_report(run, spans, links, output, *, appendix=None, notes=None,
-                      review_kind='agent_provisional'):
+                      review_kind='agent_provisional', timing=()):
     run, spans, output = Path(run), Path(spans), Path(output)
     links = [Path(p) for p in links]
     if review_kind not in REVIEW_KINDS:
@@ -146,7 +344,8 @@ def build_html_report(run, spans, links, output, *, appendix=None, notes=None,
         raise ValueError('at least one link sidecar required')
     if output.exists():
         raise FileExistsError(output)
-    if any(output.resolve().is_relative_to(p.resolve()) for p in [run, spans, *links]):
+    timing = [Path(p) for p in timing]
+    if any(output.resolve().is_relative_to(p.resolve()) for p in [run, spans, *links, *timing]):
         raise ValueError('output must be outside immutable inputs')
     manifest, run_bytes, documents, results = _verified_run(run)
     run_hash = sha256(run_bytes)
@@ -247,6 +446,9 @@ def build_html_report(run, spans, links, output, *, appendix=None, notes=None,
                                       'pipeline_complete_documents': sum(natives[arm_id, d['document_id']]['pipeline_complete'] for d in documents)},
                        'timing': None, 'notes': ['Intent, sentiment and aliases are visible but unscored. Full-pipeline timing was not measured.'] +
                        ([] if source else ['No identity-matched detector arm: span scores unavailable.'])})
+    timing_rows = _timing_evidence(timing, documents, models, natives,
+                                   {c['arm_id']: c for c in configurations}, frozen) if timing else []
+    field_scores = _field_evidence(documents, refs, models, natives, by_result, review_kind)
     ref_by_id = {r['document_id']: r for r in refs}
     presentation = []
     for document in documents:
@@ -288,7 +490,7 @@ def build_html_report(run, spans, links, output, *, appendix=None, notes=None,
                            'run_manifest_sha256': run_hash, 'reference_sha256': reference_hash,
                            'run_status': manifest['status'], 'heldout_quality_evaluated': False,
                            'coverage': span_scores[review_kind]['coverage'], 'timing_policy': manifest['timing_policy']},
-            'limitations': ['Development diagnostic, not a held-out benchmark. No general superiority claim follows from these scores.',
+            'limitations': [_reference_limit(refs),
                             'Human-reviewed and agent-provisional scores are separate; missing coverage is N/A, not accuracy zero.',
                             'Ownership masks exclude every edge touching the ignored endpoint, including wrong owners. Inspect them below.',
                             'Intent, sentiment, aliases and confidence calibration have not been scored here.',
@@ -297,6 +499,27 @@ def build_html_report(run, spans, links, output, *, appendix=None, notes=None,
             'section_summaries': {f: _summary(models, f) for f in ('software', 'version', 'links')},
             'feedback': feedback, 'appendix': appendix_data,
             'scored_references': {'spans': span_scores, 'links': link_scores}}
+    if timing_rows:
+        data['timing_rows'] = timing_rows
+        data['limitations'][4] = ('Timing is engineering context on identical passages. CPU/MPS measurements use their stated devices; '
+                                   'model outputs may differ between timing and scored runs. Softcite service health is not cold model load, '
+                                   'and AMD64 service timing is a separate environment.')
+        for model in models:
+            if model['kind'] == 'pipeline' and any(row['summary']['attempted'] for row in model.get('timing') or []):
+                model['notes'] = [note.replace(' Full-pipeline timing was not measured.', '') for note in model['notes']]
+    if field_scores is not None:
+        data['field_scores'] = field_scores
+        data['limitations'][3] = ('Intent, sentiment, and complete-occurrence scores use only the selected review kind; '
+                                   'missing classes leave full macro scores N/A. Alias scores are conditional on explicitly reviewed endpoint pairs.')
+        masked = sorted({ident for score in field_scores.values() for ident in score['version_field_masked_documents']})
+        if masked:
+            data['limitations'].append(f'Attribute version and complete-occurrence scoring conservatively excludes {len(masked)} '
+                'passage(s) with ignored version endpoints; dedicated version and ownership panels keep precise endpoint masks. '
+                'Excluded document IDs: ' + ', '.join(masked))
+        for model in models:
+            if model['kind'] == 'pipeline':
+                model['notes'] = [note.replace('Intent, sentiment and aliases are visible but unscored.',
+                                               'Selected-review field scores are shown below.') for note in model['notes']]
     pipelines = [m for m in models if m['kind'] == 'pipeline']
     for previous, candidate in zip(pipelines, pipelines[1:]):
         changed = [k for k in previous['identity']['stages'] if previous['identity']['stages'][k] != candidate['identity']['stages'].get(k)]

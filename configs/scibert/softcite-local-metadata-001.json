@@ -1,0 +1,51 @@
+{
+  "backend_id": "softcite/software-mentions:0.8.1",
+  "image_digest": "grobid/software-mentions@sha256:f03e4f842c651ebd30b917da8c2e44cd4dbb24255a6ab5257ed9dd1da5fe40ff",
+  "weight_sha256": "49d8f4dfed8c43c0bda51560f5d42fef753c786ad2e42ac402ca9588d43135b4",
+  "weights": [
+    {
+      "path": "/opt/grobid/grobid-home/models/software/model.wapiti",
+      "sha256": "49d8f4dfed8c43c0bda51560f5d42fef753c786ad2e42ac402ca9588d43135b4"
+    },
+    {
+      "path": "/opt/grobid/grobid-home/models/software-BERT/model_weights.hdf5",
+      "sha256": "9ea5e50e4d778c464a75f6bab2901107c5f50dbb16d62249efb4994390183a4d"
+    },
+    {
+      "path": "/opt/grobid/grobid-home/models/context_used_bert/model_weights.hdf5",
+      "sha256": "95ea068e2ab8ed28b22c984e32ac8ad0f8b6105c100d00ef9cad8b4dffb1be75"
+    },
+    {
+      "path": "/opt/grobid/grobid-home/models/context_creation_bert/model_weights.hdf5",
+      "sha256": "82c65aa8020380c2ac32b144e3a803549b9343370b3cb458f4a1c494f26dc2a4"
+    },
+    {
+      "path": "/opt/grobid/grobid-home/models/context_shared_bert/model_weights.hdf5",
+      "sha256": "7844fdf560ac0ad413503940457d2a5b9ea6069eca3e1a04ced69fca58f03c47"
+    },
+    {
+      "path": "/opt/grobid/software-mentions/resources/config/config.yml",
+      "sha256": "411fe52b49c14adeb9f3c48547ba9b56e361eec04e990c19260c2ea5e0b7cd1a"
+    }
+  ],
+  "container_id": "0aec80e324e900feefe6d6d458b08abbdcf4d445f4816b9f621fb7111bc660d6",
+  "image_architecture": "amd64",
+  "image_os": "linux",
+  "host_architecture": "arm64",
+  "mounts": [],
+  "inspected_at": "2026-09-30",
+  "method": "read_only_docker_inspect_diff_and_exec_sha256sum",
+  "model_selection": {
+    "software": "wapiti",
+    "software_type": "wapiti",
+    "context": "binary_LinkBERT_classifiers"
+  },
+  "configuration_declared_version": "0.8.0",
+  "limitations": [
+    "Image tag is 0.8.1 but bundled configuration declares 0.8.0.",
+    "AMD64 Linux container on ARM64 host; timings describe this deployment, not hardware-independent model efficiency.",
+    "No model/config path modifications appeared in docker diff; logs/cache/tmp changes only.",
+    "Weight checksums identify installed artifacts; process memory was not inspected."
+  ],
+  "evidence": "49d8f4dfed8c43c0bda51560f5d42fef753c786ad2e42ac402ca9588d43135b4  /opt/grobid/grobid-home/models/software/model.wapiti\n9ea5e50e4d778c464a75f6bab2901107c5f50dbb16d62249efb4994390183a4d  /opt/grobid/grobid-home/models/software-BERT/model_weights.hdf5\n95ea068e2ab8ed28b22c984e32ac8ad0f8b6105c100d00ef9cad8b4dffb1be75  /opt/grobid/grobid-home/models/context_used_bert/model_weights.hdf5\n82c65aa8020380c2ac32b144e3a803549b9343370b3cb458f4a1c494f26dc2a4  /opt/grobid/grobid-home/models/context_creation_bert/model_weights.hdf5\n7844fdf560ac0ad413503940457d2a5b9ea6069eca3e1a04ced69fca58f03c47  /opt/grobid/grobid-home/models/context_shared_bert/model_weights.hdf5\n411fe52b49c14adeb9f3c48547ba9b56e361eec04e990c19260c2ea5e0b7cd1a  /opt/grobid/software-mentions/resources/config/config.yml\nversion: \"0.8.0\"\n\ngrobidHome: ../grobid-home\n\n# entity-fishing server information for performing entity disambiguation\n# for https, indicate 443 as port\nentityFishingHost: nerd.huma-num.fr/nerd/\nentityFishingPort: 443\n#entityFishingHost: localhost\n#entityFishingPort: 8090\n\ncorpusPath: resources/dataset/\ntmpPath: tmp/\n\n# path to Pub2TEI repository as available at https://github.com/kermitt2/Pub2TEI\npub2teiPath: \"../../Pub2TEI/\"\n\n# if true we use binary classifiers for the contexts, otherwise use a single multi-label classifier\n# binary classifiers perform better, but havier to use\nuseBinaryContextClassifiers: true\n\nmodels:\n  - name: \"software\"\n    engine: \"wapiti\"\n    #engine: \"delft\"\n    wapiti:\n      # wapiti training parameters, only considered when wapiti is used as engine for the model, \n      # these parameters are be used at training time only\n      epsilon: 0.00001\n      window: 30\n      nbMaxIterations: 1500\n    delft:\n      # deep learning parameters\n      #architecture: \"BidLSTM_CRF\"\n      #useELMo: false\n      #embeddings_name: \"glove-840B\"\n      architecture: \"BERT\"\n      transformer: \"allenai/scibert_scivocab_cased\"\n      #transformer: \"michiyasunaga/LinkBERT-basecased\"\n\n  - name: \"software-type\"\n    engine: \"wapiti\"\n    #engine: \"delft\"\n    wapiti:\n      # wapiti training parameters, only considered when wapiti is used as engine for the model, \n      # these parameters are be used at training time only\n      epsilon: 0.00001\n      window: 30\n      nbMaxIterations: 1500\n    delft:\n      # deep learning parameters\n      #architecture: \"BidLSTM_CRF\"\n      #useELMo: false\n      #embeddings_name: \"glove-840B\"\n      architecture: \"BERT_CRF\"\n      transformer: \"michiyasunaga/LinkBERT-basecased\"\n\n  - name: \"context\"\n    # multi-label classifier for the context \n    engine: \"delft\"\n    delft:\n      #architecture: \"gru\"\n      #embeddings_name: \"glove-840B\"\n      architecture: \"bert\"\n      transformer: \"michiyasunaga/LinkBERT-basecased\"\n\n  - name: \"context_used\"\n    # binary classifier to predict if the context of the mention correspond to a usage of the software \n    engine: \"delft\"\n    delft:\n      #architecture: \"gru\"\n      #embeddings_name: \"glove-840B\"\n      architecture: \"bert\"\n      transformer: \"michiyasunaga/LinkBERT-basecased\"\n\n  - name: \"context_creation\"\n    # binary classifier to predict if the context of the mention correspond to a creation of the software \n    engine: \"delft\"\n    delft:\n      #architecture: \"gru\"\n      #embeddings_name: \"glove-840B\"\n      architecture: \"bert\"\n      transformer: \"michiyasunaga/LinkBERT-basecased\"\n\n  - name: \"context_shared\"\n    # binary classifier to predict if the context of the mention correspond to a sharing of the software \n    engine: \"delft\"\n    delft:\n      #architecture: \"gru\"\n      #embeddings_name: \"glove-840B\"\n      architecture: \"bert\"\n      transformer: \"michiyasunaga/LinkBERT-basecased\"\n\n# Limit the maximum number of requests\nmaxParallelRequests: 0\n\n# CORS configuration for the web API service\ncorsAllowedOrigins: \"*\"\ncorsAllowedMethods: \"OPTIONS,GET,PUT,POST,DELETE,HEAD\"\ncorsAllowedHeaders: \"X-Requested-With,Content-Type,Accept,Origin\"\n\nserver:\n  type: custom\n  idleTimeout: 120 seconds\n  applicationConnectors:\n    - type: http\n      port: 8060\n  adminConnectors:\n    - type: http\n      port: 8061\n  registerDefaultExceptionMappers: false\n  maxThreads: 2048\n  maxQueuedRequests: 2048\n  acceptQueueSize: 2048\n  # change the following for having all http requests logged\n  requestLog:\n    appenders: []\n\n# these logging settings apply to the service usage mode\nlogging:\n  level: INFO\n  loggers:\n    org.apache.pdfbox.pdmodel.font.PDSimpleFont: \"OFF\"\n    org.glassfish.jersey.internal: \"OFF\"\n    com.squarespace.jersey2.guice.JerseyGuiceUtils: \"OFF\"\n  appenders:\n    - type: console\n      threshold: WARN\n      timeZone: UTC\n      # uncomment to have the logs in json format\n      #layout:\n      #  type: json\n    - type: file\n      currentLogFilename: logs/software-service.log\n      threshold: INFO\n      archive: true\n      archivedLogFilenamePattern: logs/software-service-%d.log\n      archivedFileCount: 7\n      timeZone: UTC\n      # uncomment to have the logs in json format\n      #layout:\n      #  type: json\n"
+}

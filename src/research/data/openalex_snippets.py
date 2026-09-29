@@ -198,7 +198,7 @@ def _verify_config_source(config: dict) -> None:
 
 
 def _collection_config(config: dict) -> dict:
-    bounds = {'page': (1, 1), 'per_page': (1, 5), 'snippets_per_work': (1, 2),
+    bounds = {'page': (1, 10), 'per_page': (1, 5), 'snippets_per_work': (1, 2),
               'max_candidates': (1, 100), 'max_concurrency': (1, 2)}
     keys = set(bounds) | {'endpoint', 'queries', 'timeout_seconds', 'max_retries', 'max_bytes'}
     if not isinstance(config, dict) or not keys <= set(config) or set(config) - keys - {'config_source'}:
@@ -246,7 +246,7 @@ def collect_snippets(config: dict, output: Path) -> dict:
         files.append({'path': relative, 'sha256': digest(payload)})
 
     plan = [{'query': query, 'query_rank': rank,
-             'url': ENDPOINT + '?' + urlencode({'search': query, 'page': 1, 'per_page': config['per_page']})}
+             'url': ENDPOINT + '?' + urlencode({'search': query, 'page': config['page'], 'per_page': config['per_page']})}
             for rank, query in enumerate(config['queries'])]
     publish('config.json', json_bytes(config))
     publish('request-plan.jsonl', _jsonl_bytes(plan))
