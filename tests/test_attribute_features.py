@@ -230,3 +230,69 @@ def test_absolute_source_offsets_and_unsupported_context(tokenizer):
     result = build_inference_candidates(document, names, [], tokenizer, {})
     assert result['features']['intent'] == []
     assert {row['reason'] for row in result['excluded']} == {'unsupported_context'}
+
+
+def test_remote_combined_intent_evidence_masks_positive_bits_only(tokenizer):
+    from research.training.attribute_features import build_attribute_features, summarize_support
+    document, item = bundle('We used NumPy. Before. After. We later shared it.')
+    occurrence = item['annotation']['occurrences'][0]
+    occurrence['intents'] = ['used', 'shared']
+    remote = {'start': document['text'].index('We later'), 'end': len(document['text'])}
+    occurrence['evidence']['intents'] = [occurrence['name_span'], remote]
+    original = deepcopy(item)
+    result = build_attribute_features(document, [item], tokenizer, {})
+    row = result['features']['intent'][0]
+    assert row['known'] == [True, False, False]
+    assert row['targets'] == [0, 1, 1]
+    assert set(row['provenance']['masked_fields']) == {'used', 'shared'}
+    assert row['provenance']['masked_fields']['used']['reason'] == 'evidence_outside_context'
+    assert row['provenance']['masked_fields']['used']['evidence_spans'] == [remote]
+    assert summarize_support(result)['intent']['counts']['used']['positive'] == 0
+    assert item == original
+    occurrence['known']['created'] = False
+    result = build_attribute_features(document, [item], tokenizer, {})
+    assert result['features']['intent'] == []
+    assert any(row['stage'] == 'intent' and row['reason'] == 'evidence_outside_context' for row in result['excluded'])
+
+
+def test_remote_sentiment_and_negative_intent_rationale_are_excluded(tokenizer):
+    from research.training.attribute_features import build_attribute_features
+    document, item = bundle('We used NumPy. Before. After. It was good.')
+    occurrence = item['annotation']['occurrences'][0]
+    remote = {'start': document['text'].index('It was'), 'end': len(document['text'])}
+    occurrence['sentiment'] = 'positive'
+    occurrence['evidence']['sentiment'] = [remote]
+    occurrence['intents'] = ['mentioned']
+    occurrence['evidence']['intents'] = [remote]
+    result = build_attribute_features(document, [item], tokenizer, {})
+    assert result['features']['sentiment'] == [] and result['features']['intent'] == []
+    excluded = {row['stage']: row for row in result['excluded']}
+    assert excluded['sentiment']['reason'] == 'evidence_outside_context'
+    assert set(excluded['intent']['provenance']['masked_fields']) == {'created', 'used', 'shared'}
+    occurrence['evidence']['intents'] = []
+    assert build_attribute_features(document, [item], tokenizer, {})['features']['intent'][0]['known'] == [True] * 3
+    occurrence['evidence']['sentiment'] = [occurrence['name_span']]
+    assert build_attribute_features(document, [item], tokenizer, {})['features']['sentiment'][0]['known'] == [True]
+
+
+@pytest.mark.parametrize('decision', ['alias', 'not_alias'])
+def test_alias_evidence_outside_pair_context_is_excluded(tokenizer, decision):
+    from research.training.attribute_features import build_attribute_features
+    document, item = bundle('We used NumPy and ToolX. Before. After.')
+    members = sorted(o['mention_id'] for o in item['annotation']['occurrences'])
+    item['annotation']['alias_annotations']['relations'] = [{
+        'relation_id': alias_relation_id('d', document['text_revision'], members),
+        'document_id': 'd', 'text_revision': document['text_revision'],
+        'member_mention_ids': members, 'relation_type': 'explicit_alternative_name',
+        'decision': decision, 'preferred_mention_id': members[0] if decision == 'alias' else None,
+        'evidence_spans': [item['task']['context_span']],
+        'review': {'status': 'agent_provisional', 'reasons': ['checked']}}]
+    original = deepcopy(item)
+    result = build_attribute_features(document, [item], tokenizer, {})
+    assert result['features']['alias'] == []
+    excluded = next(row for row in result['excluded'] if row['stage'] == 'alias')
+    assert excluded['reason'] == 'evidence_outside_context'
+    assert excluded['provenance']['masked_fields']['alias']['reason'] == 'evidence_outside_context'
+    assert item == original
+    item['annotation']['alias_annotations']['relations'][0]['evidence_spans'] = [{'start': 0, 'end': 23}]
+    assert build_attribute_features(document, [item], tokenizer, {})['features']['alias'][0]['known'] == [True]

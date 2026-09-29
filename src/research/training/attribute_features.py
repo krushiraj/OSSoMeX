@@ -19,6 +19,7 @@ CONTEXT_POLICY = {'schema_version': 'attribute-features-1', 'segmenter_version':
                   'paragraph_policy': 'source-metadata-or-blank-lines-v1',
                   'pair_policy': 'same-or-adjacent-sentence-same-paragraph-v1',
                   'attribute_policy': 'previous-current-next-same-paragraph-v1',
+                  'supervision_evidence_policy': 'wholly-visible-field-evidence-v1',
                   'max_length': 512, 'markers': MARKERS, 'distance_clip': 128}
 
 
@@ -150,7 +151,8 @@ def _encode(document, first, second, context, tokenizer, policy):
             'order_flag': int(second['span']['start'] > first['span']['start']) if second else 0}, None
 
 
-def _add(result, document, stage, first, second, sentences, tokenizer, targets=None, known=None, provenance=None):
+def _add(result, document, stage, first, second, sentences, tokenizer, targets=None, known=None, provenance=None,
+         evidence_by_field=None):
     identity = {'document_id': document['document_id'], 'text_revision': document.get('text_revision'),
                 'work_group_id': document.get('work_group_id', document['document_id']),
                 'source': document.get('source', 'unknown'), 'stage': stage,
@@ -166,8 +168,20 @@ def _add(result, document, stage, first, second, sentences, tokenizer, targets=N
         reason = 'repeated_name'
     context, context_reason = _context(first, second, sentences)
     reason = reason or context_reason
+    if known is not None:
+        known = list(known)
+    masked_fields = {}
+    if reason is None:
+        for field, (index, evidence) in (evidence_by_field or {}).items():
+            outside = [span for span in evidence
+                       if not context['start'] <= span['start'] < span['end'] <= context['end']]
+            if known[index] and outside:
+                known[index] = False
+                masked_fields[field] = {'reason': 'evidence_outside_context', 'evidence_spans': deepcopy(outside)}
+    if masked_fields:
+        identity['provenance']['masked_fields'] = masked_fields
     if reason is None and known is not None and not any(known):
-        reason = 'all_inactive'
+        reason = 'evidence_outside_context' if masked_fields else 'all_inactive'
     tensor, encoding_reason = _encode(document, first, second, context, tokenizer, result['config']) if reason is None else (None, None)
     reason = reason or encoding_reason
     if reason:
@@ -232,12 +246,18 @@ def build_attribute_features(document: dict, items: list[dict], tokenizer, confi
         for occurrence in occurrences:
             first = endpoints[occurrence['mention_id']]
             intents = occurrence['intents'] or []
+            intent_evidence = occurrence['evidence']['intents']
+            # Shared intent evidence supports positive bits; mentioned-only evidence is negative rationale.
+            intent_fields = {bit: (index, intent_evidence) for index, bit in enumerate(INTENT_BITS)
+                             if bit in intents or not any(label in intents for label in INTENT_BITS)}
             _add(result, document, 'intent', first, None, sentences, tokenizer,
-                 [int(bit in intents) for bit in INTENT_BITS], [occurrence['known'][bit] for bit in INTENT_BITS], provenance)
+                 [int(bit in intents) for bit in INTENT_BITS], [occurrence['known'][bit] for bit in INTENT_BITS],
+                 provenance, intent_fields)
             sentiment = occurrence['sentiment']
             _add(result, document, 'sentiment', first, None, sentences, tokenizer,
                  [SENTIMENT_LABELS.index(sentiment) if sentiment in SENTIMENT_LABELS else 0],
-                 [occurrence['known']['sentiment']], provenance)
+                 [occurrence['known']['sentiment']], provenance,
+                 {'sentiment': (0, occurrence['evidence']['sentiment'])})
             for second in all_versions.values():
                 linked = any(edge['span'] == second['span'] for edge in occurrence['version_links'])
                 known = occurrence['known']['versions'] and (linked or _complete_relation(item, first, second))
@@ -248,7 +268,7 @@ def build_attribute_features(document: dict, items: list[dict], tokenizer, confi
                                    key=lambda endpoint: endpoint['span']['start'])
             _add(result, document, 'alias', first, second, sentences, tokenizer,
                  [int(relation['decision'] == 'alias')], [relation['decision'] in ('alias', 'not_alias')],
-                 {**provenance, 'alias_relation': deepcopy(relation)})
+                 {**provenance, 'alias_relation': deepcopy(relation)}, {'alias': (0, relation['evidence_spans'])})
     return result
 
 
