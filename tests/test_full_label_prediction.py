@@ -312,3 +312,27 @@ def test_validator_binds_unavailable_linker_endpoint_in_detector_only_result(pip
     result['pair_predictions']['linker'][0]['first_span'] = {'start': 14, 'end': 18}
     with pytest.raises(ValueError):
         validate_full_label_prediction(result, document)
+
+
+@pytest.mark.parametrize(('block_kind', 'context_kind'), [
+    ('table', 'table'), ('table-wrap', 'table'), ('ref', 'reference'),
+    ('ref-list', 'reference'), ('reference', 'reference')])
+@pytest.mark.parametrize('metadata_location', ['paragraphs', 'metadata'])
+def test_nonprose_diagnostic_context_preserves_containing_source_block(pipeline_factory, block_kind, context_kind, metadata_location):
+    pipeline, document = pipeline_factory('Before prose.\n\nNumPy 1.24.\n\nAfter prose.', ('NumPy',), ('1.24',))
+    paragraphs = [{'start': 0, 'end': 13, 'kind': 'p'},
+                  {'start': 15, 'end': 26, 'kind': block_kind},
+                  {'start': 28, 'end': 40, 'kind': 'p'}]
+    if metadata_location == 'paragraphs':
+        document['paragraphs'] = paragraphs
+    else:
+        document['metadata'] = {'paragraphs': paragraphs}
+    result = pipeline.predict(document)
+    occurrence = result['field_predictions'][0]
+    assert occurrence['context_span'] == {'start': 15, 'end': 26}
+    assert occurrence['context_sentence'] == 'NumPy 1.24.'
+    assert occurrence['context_kind'] == context_kind
+    assert all(occurrence[field]['value'] is None for field in ('versions', 'intents', 'sentiment'))
+    assert all('unsupported_context' in occurrence[field]['reasons'] for field in ('intents', 'sentiment'))
+    assert {row['stage'] for row in result['exclusions'] if row['reason'] == 'unsupported_context'} == {'linker', 'intent', 'sentiment'}
+    assert result['status'] == 'partial' and not result['public_rows']

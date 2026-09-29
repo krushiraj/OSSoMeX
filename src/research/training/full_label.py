@@ -180,13 +180,21 @@ class FullLabelPipeline:
                 result['review_reasons'].append('low_confidence:detector')
             source_span = {'start': start, 'end': end}
             if span['label'] == 'SOFTWARE':
-                sentence = next((s for s in sentences if s['start'] <= start < end <= s['end']),
-                                {'start': 0, 'end': len(document['text'])})
-                context = {'start': sentence['start'], 'end': sentence['end']}
+                sentence = next((s for s in sentences if s['start'] <= start < end <= s['end']), None)
+                block = next((block for block in paragraphs if block['start'] <= start < end <= block['end']), None)
+                source_context = sentence or block or {'start': 0, 'end': len(document['text'])}
+                cs, ce = check_span(source_context, document, 'source_context', len(document['text']))
+                context = {'start': cs, 'end': ce}
+                context_kind = 'sentence'
+                if sentence is None and block is not None:
+                    context_kind = {
+                        'table': 'table', 'table-wrap': 'table', 'ref': 'reference',
+                        'ref-list': 'reference', 'reference': 'reference', 'references': 'reference',
+                    }.get(block['kind'], 'paragraph')
                 names.append({'mention_id': occurrence_id(document['document_id'], document['text_revision'], start, end),
                     'name': span['text'], 'name_span': source_span, 'software_score': span['score'],
                     'context_span': context, 'context_sentence': document['text'][context['start']:context['end']],
-                    'context_kind': 'sentence'})
+                    'context_kind': context_kind})
             elif span['label'] == 'VERSION':
                 versions.append({'version_id': 'version:' + occurrence_id(document['document_id'], document['text_revision'], start, end),
                                  'text': span['text'], 'span': source_span})
