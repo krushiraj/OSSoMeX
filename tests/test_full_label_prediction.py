@@ -273,3 +273,42 @@ def test_excluded_alias_pair_abstains_without_claiming_consumed_model_context(pi
     pair = pipeline.predict(document)['alias_predictions']['pairs'][0]
     assert pair['label'] is None and pair['scores'] is None
     assert pair['evidence_method'] is None
+
+
+@pytest.mark.parametrize('linker_status', ['missing', 'failed'])
+def test_incomplete_linker_resolves_absence_only_for_occurrence_without_eligible_pair(pipeline_factory, linker_status):
+    pipeline, document = pipeline_factory('NumPy 1.24.\n\nToolX.', ('NumPy', 'ToolX'), ('1.24',),
+        missing=('linker',) if linker_status == 'missing' else (),
+        values={'linker': [RuntimeError('linker failed')]} if linker_status == 'failed' else None)
+    result = pipeline.predict(document)
+    assert result['field_predictions'][0]['versions']['value'] is None
+    assert result['field_predictions'][1]['versions']['value'] == []
+    assert [(row['name'], row['version']) for row in result['public_rows']] == [('ToolX', None)]
+    assert not result['public_contract_complete'] and result['status'] == 'partial'
+
+
+@pytest.mark.parametrize('mutation', ['linker_first', 'linker_second', 'alias_first', 'alias_second', 'linker_context', 'alias_context'])
+def test_validator_binds_pair_spans_and_consumed_context_to_detected_endpoints(pipeline_factory, mutation):
+    from research.training.full_label import validate_full_label_prediction
+    pipeline, document = pipeline_factory(missing=('intent',))
+    result = pipeline.predict(document)
+    pair = result['pair_predictions']['linker'][0] if mutation.startswith('linker') else result['alias_predictions']['pairs'][0]
+    if mutation.endswith('first'):
+        pair['first_span'] = {'start': 14, 'end': 18}
+    elif mutation.endswith('second'):
+        pair['second_span'] = {'start': 8, 'end': 13}
+    else:
+        pair['context_text'] = 'invented model input'
+    with pytest.raises(ValueError):
+        validate_full_label_prediction(result, document)
+
+
+def test_validator_binds_unavailable_linker_endpoint_in_detector_only_result(pipeline_factory):
+    from research.training.full_label import validate_full_label_prediction
+    pipeline, document = pipeline_factory('We used NumPy 1.24 and 1.26.', ('NumPy',), ('1.24', '1.26'),
+        missing=('linker', 'intent', 'sentiment', 'alias'))
+    result = pipeline.predict(document)
+    assert validate_full_label_prediction(result, document) == result
+    result['pair_predictions']['linker'][0]['first_span'] = {'start': 14, 'end': 18}
+    with pytest.raises(ValueError):
+        validate_full_label_prediction(result, document)

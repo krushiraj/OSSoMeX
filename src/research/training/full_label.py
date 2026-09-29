@@ -37,6 +37,15 @@ def _probability(value):
         raise ValueError('finite probability in [0,1] required')
 
 
+def _no_eligible_version_candidate(mention_id, versions, pairs, exclusions):
+    if any(row['first_id'] == mention_id for row in pairs):
+        return False
+    excluded = [row for row in exclusions if row['stage'] == 'linker' and row['first_id'] == mention_id]
+    if any(row['reason'] not in NONCANDIDATES for row in excluded):
+        return False
+    return set(versions) <= {row['second_id'] for row in excluded}
+
+
 def _alias_groups(pairs):
     positive = [pair for pair in pairs if pair['label'] == 'alias']
     adjacency = {}
@@ -244,7 +253,9 @@ class FullLabelPipeline:
             links = [row for row in evaluations['linker'] if row['first_id'] == identity]
             missed = [row for row in exclusions['linker'] if row['first_id'] == identity and row['reason'] not in NONCANDIDATES]
             incomplete = bool(missed) or any(row['status'] != 'success' for row in links)
-            if result['stage_status']['linker']['status'] == 'unavailable':
+            if _no_eligible_version_candidate(identity, by_version, evaluations['linker'], exclusions['linker']):
+                fields['versions'] = _field('success', [], [], ['predicted_absence'])
+            elif result['stage_status']['linker']['status'] == 'unavailable':
                 fields['versions'] = _field('unavailable', reasons=['missing_stage'])
             elif result['stage_status']['linker']['status'] == 'failed' and not links:
                 fields['versions'] = _field('failed', reasons=result['stage_status']['linker']['reasons'])
@@ -310,6 +321,21 @@ def validate_full_label_prediction(result: dict, document: dict) -> dict:
     if type(result.get('pipeline_complete')) is not bool or result['pipeline_complete'] != complete:
         raise ValueError('inconsistent pipeline completeness')
     fields = result['field_predictions']
+    detected = result['detector_diagnostics']
+    detected_names, detected_versions = {}, {}
+    for span in (detected or {}).get('spans', []):
+        start, end = check_span(span, document, 'detector.span', len(document['text']))
+        if span['text'] != document['text'][start:end]:
+            raise ValueError('detector source span mismatch')
+        _probability(span['score'])
+        endpoint_id = occurrence_id(document['document_id'], document['text_revision'], start, end)
+        source_span = {'start': start, 'end': end}
+        if span['label'] == 'SOFTWARE':
+            detected_names[endpoint_id] = source_span
+        elif span['label'] == 'VERSION':
+            detected_versions['version:' + endpoint_id] = source_span
+        else:
+            raise ValueError('unsupported detector span label')
     ids, complete_ids = set(), set()
     for row in fields:
         start, end = check_span(row['name_span'], document, 'name_span', len(document['text']))
@@ -329,7 +355,10 @@ def validate_full_label_prediction(result: dict, document: dict) -> dict:
                 for value in values:
                     _probability(value)
                 stage = {'software': 'detector', 'versions': 'linker', 'intents': 'intent', 'sentiment': 'sentiment'}[field]
-                if stages[stage]['status'] not in ('success', 'partial', 'not_applicable'):
+                justified_absence = (field == 'versions' and prediction['value'] == [] and prediction['scores'] == []
+                    and 'predicted_absence' in prediction['reasons'] and _no_eligible_version_candidate(
+                        row['mention_id'], detected_versions, result['pair_predictions']['linker'], result['exclusions']))
+                if stages[stage]['status'] not in ('success', 'partial', 'not_applicable') and not justified_absence:
                     raise ValueError('successful field conflicts with stage failure')
                 if field == 'intents':
                     if set(prediction['scores']) != set(INTENT_BITS):
@@ -365,14 +394,11 @@ def validate_full_label_prediction(result: dict, document: dict) -> dict:
     if public != result['public_rows'] or mappings != result['public_mappings']:
         raise ValueError('public mappings do not match canonical occurrences')
     detector_ok = stages['detector']['status'] == 'success'
-    detected = result['detector_diagnostics']
     if detector_ok:
         if not isinstance(detected, dict) or detected['status'] not in ('success', 'no_mentions') or any(
                 chunk['status'] != 'success' for chunk in detected['chunks']):
             raise ValueError('detector diagnostics do not prove successful coverage')
-        detected_ids = {occurrence_id(document['document_id'], document['text_revision'], span['start'], span['end'])
-                        for span in detected['spans'] if span['label'] == 'SOFTWARE'}
-        if ids != detected_ids:
+        if ids != set(detected_names):
             raise ValueError('field coverage must retain every detected occurrence')
     expected_public_complete = detector_ok and len(complete_ids) == len(fields)
     if type(result.get('public_contract_complete')) is not bool or result['public_contract_complete'] != expected_public_complete:
@@ -382,22 +408,36 @@ def validate_full_label_prediction(result: dict, document: dict) -> dict:
     expected_status = 'failure' if not detector_ok else 'partial' if not complete else 'success' if fields else 'no_mentions'
     if result['status'] != expected_status:
         raise ValueError('inconsistent document status')
-    for pair in [*result['pair_predictions']['linker'], *result['alias_predictions']['pairs']]:
-        if pair['status'] == 'success':
-            if pair['scores'] is None or pair['label'] is None:
-                raise ValueError('successful pair requires scores and label')
-            for value in pair['scores'].values():
-                _probability(value)
-        elif pair['scores'] is not None or pair['label'] is not None or not pair['reasons']:
-            raise ValueError('incomplete pair cannot carry negative predictions')
-        for key in ('first_span', 'second_span', 'context_span'):
-            if pair.get(key):
-                check_span(pair[key], document, key, len(document['text']))
+    for stage, pairs in (('linker', result['pair_predictions']['linker']), ('alias', result['alias_predictions']['pairs'])):
+        for pair in pairs:
+            if pair['status'] == 'success':
+                if pair['scores'] is None or pair['label'] is None:
+                    raise ValueError('successful pair requires scores and label')
+                for value in pair['scores'].values():
+                    _probability(value)
+            elif pair['scores'] is not None or pair['label'] is not None or not pair['reasons']:
+                raise ValueError('incomplete pair cannot carry negative predictions')
+            second_endpoints = detected_versions if stage == 'linker' else detected_names
+            for key, endpoint_id, endpoints in (('first_span', pair['first_id'], detected_names),
+                                               ('second_span', pair['second_id'], second_endpoints)):
+                check_span(pair.get(key), document, key, len(document['text']))
+                if endpoint_id not in endpoints or pair[key] != endpoints[endpoint_id]:
+                    raise ValueError('pair source span does not match detected endpoint')
+            context = pair.get('context_span')
+            if context is not None:
+                cs, ce = check_span(context, document, 'context_span', len(document['text']))
+                if any(not cs <= pair[key]['start'] < pair[key]['end'] <= ce for key in ('first_span', 'second_span')):
+                    raise ValueError('pair context does not contain detected endpoints')
+            if pair.get('evidence_method') == 'model_input_context':
+                if context is None or pair.get('context_text') != document['text'][context['start']:context['end']]:
+                    raise ValueError('pair consumed model input context mismatch')
     for pair in result['alias_predictions']['pairs']:
         if any(pair.get(key) is not None for key in ('relation_type', 'preferred_mention_id', 'preferred_name')):
             raise ValueError('binary alias model cannot predict subtype or preferred name')
         if not set(pair['member_mention_ids']) <= ids or len(set(pair['member_mention_ids'])) != 2:
             raise ValueError('alias endpoints require two detected occurrences')
+        if pair['member_mention_ids'] != [pair['first_id'], pair['second_id']]:
+            raise ValueError('alias members do not match pair endpoints')
     if result['alias_predictions']['groups'] != _alias_groups(result['alias_predictions']['pairs']):
         raise ValueError('alias groups do not match model edges')
     return deepcopy(result)
