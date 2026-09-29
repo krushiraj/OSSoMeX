@@ -1,0 +1,105 @@
+{
+  "title": "What base SciBERT produces, and what task training can add",
+  "summary": "The pinned base SciBERT checkpoint produces contextual token representations and pretrained masked-token predictions. It has no ready-to-use SOFTWARE/VERSION classifier. A trained task head can use SciBERT with either a frozen encoder or further encoder fine-tuning; neither route guarantees accurate extraction without evaluation.",
+  "sources": [
+    {
+      "title": "AllenAI SciBERT repository and task examples",
+      "url": "https://github.com/allenai/scibert"
+    },
+    {
+      "title": "SciBERT paper, ACL Anthology",
+      "url": "https://aclanthology.org/D19-1371/"
+    },
+    {
+      "title": "AllenAI SciCite citation-intent dataset",
+      "url": "https://github.com/allenai/scicite/blob/master/README.md"
+    }
+  ],
+  "examples": [
+    {
+      "title": "Actual base checkpoint: masked token in software context",
+      "kind": "observed_base_masked_token",
+      "input": "The microscopy images were analyzed with [MASK] software.",
+      "output": {
+        "top5_tokens": [
+          {"token": "Image", "probability": 0.16323406994342804},
+          {"token": "SPSS", "probability": 0.14001311361789703},
+          {"token": "[UNK]", "probability": 0.10121447592973709},
+          {"token": "Excel", "probability": 0.07943331450223923},
+          {"token": "the", "probability": 0.07039475440979004}
+        ],
+        "last_hidden_shape": [1, 11, 768]
+      },
+      "note": "Captured offline from the pinned base checkpoint. These are vocabulary-token probabilities at [MASK], not extracted software spans or task-label probabilities.",
+      "source_url": "https://github.com/allenai/scibert"
+    },
+    {
+      "title": "Actual base checkpoint: masked token in clinical context",
+      "kind": "observed_base_masked_token",
+      "input": "Patients with [MASK] were enrolled in the study.",
+      "output": {
+        "top5_tokens": [
+          {"token": "AML", "probability": 0.029405077919363976},
+          {"token": "RA", "probability": 0.02752358838915825},
+          {"token": "cancer", "probability": 0.026708876714110374},
+          {"token": "MS", "probability": 0.02606661431491375},
+          {"token": "COPD", "probability": 0.02378084510564804}
+        ],
+        "last_hidden_shape": [1, 11, 768]
+      },
+      "note": "Captured offline from the pinned base checkpoint. The output predicts one masked vocabulary token; it does not identify disease mentions elsewhere in a sentence.",
+      "source_url": "https://github.com/allenai/scibert"
+    },
+    {
+      "title": "Illustrative disease named-entity extraction",
+      "kind": "illustrative_after_task_training",
+      "input": "Participants with asthma received standard care.",
+      "output": {"entities": [{"text": "asthma", "label": "DISEASE"}]},
+      "note": "Desired task-specific output only. This sentence was not run through a disease NER model; a suitable labeled-data-trained head and validation would be needed.",
+      "source_url": "https://github.com/allenai/scibert"
+    },
+    {
+      "title": "Illustrative citation-intent classification",
+      "kind": "illustrative_after_task_training",
+      "input": "We applied the assay introduced by Lee et al. (2020) to quantify the samples.",
+      "output": {"citation_intent": "method"},
+      "note": "Desired task-specific output only. SciCite has citation-context labels including method; this synthetic sentence was not classified by the base checkpoint.",
+      "source_url": "https://github.com/allenai/scicite/blob/master/README.md"
+    },
+    {
+      "title": "Illustrative PICO extraction",
+      "kind": "illustrative_after_task_training",
+      "input": "Adults with asthma received inhaled budesonide or placebo; symptom scores were measured after 12 weeks.",
+      "output": {
+        "population": "Adults with asthma",
+        "intervention": "inhaled budesonide",
+        "comparator": "placebo",
+        "outcome": "symptom scores"
+      },
+      "note": "Desired task-specific output only, using a simple teaching schema. The base checkpoint did not produce PICO fields; the SciBERT repository lists PICO as a downstream task.",
+      "source_url": "https://github.com/allenai/scibert"
+    },
+    {
+      "title": "Illustrative scientific relation extraction",
+      "kind": "illustrative_after_task_training",
+      "input": "Compound A inhibited enzyme B in the assay.",
+      "output": {"relations": [{"subject": "Compound A", "relation": "inhibited", "object": "enzyme B"}]},
+      "note": "Desired task-specific output only, with a teaching schema rather than a named dataset label. The base checkpoint did not extract this relation.",
+      "source_url": "https://github.com/allenai/scibert"
+    }
+  ],
+  "evidence": {
+    "probe_report_path": "reports/scibert-v2/base-scibert-probe-001/report.json",
+    "probe_report_sha256": "a3ce037c16c393eb8e579eb3d2d7a802ae6927e632e48972faef6b613c97a598",
+    "checkpoint_model_id": "allenai/scibert_scivocab_cased",
+    "checkpoint_revision": "ddf0be025f8e432a1870e34811997ba6725bf04a",
+    "checkpoint_weights_sha256": "4311e231db1e463e673732800285f0851de2c84be50c13ba0fdd26229a7a3c5f",
+    "checkpoint_config_sha256": "4746671d7cc7c9f50702c468575161745a5225707d75f4f73fb754eff9b8227a",
+    "tensor_key_count": 208,
+    "non_encoder_key_families": ["cls.predictions", "cls.seq_relationship"],
+    "task_classifier_keys": [],
+    "config_id2label": null,
+    "interpretation": "The inspected pinned checkpoint contains pretraining heads, with no task classifier weights or software/version label map. This establishes no ready-to-use extraction head; it is not an accuracy test or a claim that every adaptation must update encoder weights.",
+    "probe_scope": "Three synthetic inputs, CPU inference, local cached files only, no training or model download."
+  }
+}

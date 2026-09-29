@@ -32,6 +32,14 @@ def register(subparsers) -> None:
     links.add_argument('--full-label', action='append', default=[], metavar='ARM=JSONL',
                        help='Full-label CLI predictions on the exact frozen input population')
     links.set_defaults(func=cmd_links)
+    html = commands.add_parser('html', help='Build a verified offline comparison dashboard without model inference')
+    for key in ('run', 'spans', 'output'):
+        html.add_argument('--' + key, required=True)
+    html.add_argument('--links', action='append', required=True, help='Version-link sidecar; repeat for compatible model iterations')
+    html.add_argument('--appendix', help='Attributed capability examples JSON')
+    html.add_argument('--notes', help='Attributed unscored feedback JSON')
+    html.add_argument('--review-kind', choices=('agent_provisional', 'human_reviewed'), default='agent_provisional')
+    html.set_defaults(func=cmd_html)
 
 
 def _source(path):
@@ -141,4 +149,12 @@ def cmd_links(args):
     from .link_report import build_link_report
     build_link_report(args.run, args.references, args.full_label, args.output)
     print(json.dumps({'output': args.output, 'status': 'reported', 'mode': 'version_link_diagnostic'}))
+    return 0
+
+
+def cmd_html(args):
+    from .html_report import build_html_report
+    build_html_report(args.run, args.spans, args.links, args.output,
+                      appendix=args.appendix, notes=args.notes, review_kind=args.review_kind)
+    print(json.dumps({'output': args.output, 'status': 'reported', 'mode': 'offline_dashboard'}))
     return 0

@@ -1,0 +1,27 @@
+[
+  {
+    "title": "macOS still has a wrong version in the latest CLI transcript",
+    "body": "macOS should own 13.5, not 3.9.7. The latest user transcript shows model 004 attaching both. The frozen, normalized environment passage has a different result: 003 attached 13.5, 3.9.7 and 3.11.4; 004 attached only 13.5. The latest transcript includes carriage-return markers and split words, and combines more text. We do not have its exact input bytes, so formatting versus context-length effects are not yet isolated. Capture the input as UTF-8 and compare exact and explicitly normalized variants next; do not silently replace the frozen benchmark text.",
+    "provenance": "User-pasted CLI transcript, followed by inspection of the saved 003/004 environment predictions. The later transcript is not part of the scored seven-passage run."
+  },
+  {
+    "title": "The environment ownership score has a known blind spot",
+    "body": "Python 3.9.7 and 3.11.4 have ambiguous occurrence owners in the reference, so their ownership edges are masked globally. This also excludes wrong macOS links to those versions. A perfect scored-subset result therefore cannot establish correct macOS behavior. Review the masks explicitly and add adjudicated wrong-owner constraints or resolved occurrence ownership before relying on this case as a regression gate.",
+    "provenance": "Frozen reference-source.jsonl and per-document exclusions in the version-link sidecars. Version-span detection remains scored."
+  },
+  {
+    "title": "004 improves aggregate linking but regresses on the arrays passage",
+    "body": "On the same 28 scored links, 003 has 22 correct, 21 false positives and 6 misses; 004 has 22 correct, 15 false positives and 6 misses. Both retain the same 22 correct links. In arrays, false positives rise from 7 to 10; in the ML passage they fall from 14 to 5. This is a useful development improvement, not a reason to replace the baseline without checking per-passage regressions.",
+    "provenance": "reports/scibert-v2/linker-iteration-002/links, agent-provisional operational ownership metrics."
+  },
+  {
+    "title": "Next model iteration: names and wrong owners first",
+    "body": "Prioritize complete names such as netcdf4-python, missed statsmodels/transformers/requests, and false names such as filenames or a vendor in place of its library. Add genuinely reviewed multi-tool passages with explicit positive and negative ownership examples, including repeated versions and distant interpreter references. Keep these exposed diagnostic passages out of training and out of future held-out claims. Rerun the same report after each separate detector or linker change to see regressions. Do not raise reported confidence to conceal a wrong label.",
+    "provenance": "Qualitative review of the frozen model outputs and latest user transcript; suggested work, not implemented or trained in this reporting pass."
+  },
+  {
+    "title": "Scope of the current comparison",
+    "body": "The seven passages contain 51 software spans and 30 version spans; only 28 ownership links are scored. No passage is human-gold. Five passages come from one purpose-built stress document, including near-duplicate Python variants; the ImageJ and CodeT5 source identities remain unresolved. Softcite extracts fewer exact names here, but it has some clean local name/version pairs. This narrow diagnostic does not prove global superiority. Alias, intent and sentiment predictions can be inspected, but need field-level reviewed references before accuracy can be reported.",
+    "provenance": "Frozen input metadata, span references and link references. The counts describe this run only, not future reports."
+  }
+]
