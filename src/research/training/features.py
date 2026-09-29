@@ -107,4 +107,5 @@ def build_token_features(document, labels, coverage, tokenizer, config):
                                                 for i in range(start, end)], False],
                         'content_start': start, 'content_end': end})
     return {'document_id': document['document_id'], 'windows': results,
-            'exclusions': exclusions, 'token_count': len(ids), 'labels': LABELS}
+            'exclusions': exclusions, 'token_count': len(ids), 'labels': LABELS,
+            'word_ids': encoded.word_ids()}

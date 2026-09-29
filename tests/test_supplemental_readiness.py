@@ -13,6 +13,11 @@ from review_workflow_fixtures import batch
 from test_supplemental_annotation import acquired, imported
 
 
+class LocalEncoding(dict):
+    def word_ids(self):
+        return list(range(len(self['input_ids'])))
+
+
 class LocalTokenizer:
     is_fast = True
     do_lower_case = False
@@ -22,7 +27,7 @@ class LocalTokenizer:
         return [101, *ids, 102]
     def __call__(self, text, **kwargs):
         spans = [(m.start(), m.end()) for m in re.finditer(r'\w+|[^\w\s]', text)]
-        return {'input_ids': list(range(len(spans))), 'offset_mapping': spans}
+        return LocalEncoding(input_ids=list(range(len(spans))), offset_mapping=spans)
 
 
 def snapshot(monkeypatch, tmp_path, *, human=False, versions=False, sources=('europepmc',),

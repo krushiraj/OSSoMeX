@@ -21,6 +21,7 @@ from ..data.manifest import digest, json_bytes, verified_path, write_once
 from .attribute_features import CONTEXT_POLICY, MARKERS, STAGES, build_attribute_features, summarize_support
 from .attribute_models import AttributeModel, STAGE_LABELS, attribute_loss, build_attribute_model
 from .data import load_training_data
+from .decode import inference_decoder
 from .features import LABELS, build_token_features
 from .losses import partial_token_loss
 from .runner import BASE_MODEL, BASE_REVISION, CAPABILITIES, _batch, choose_device, save_detector, validate_recipe
@@ -256,6 +257,7 @@ def verify_stage_checkpoint(checkpoint, stage, *, allow_plumbing=False):
     for row in manifest['files']:
         verified_path(checkpoint, row)
     if stage == 'detector':
+        inference_decoder(manifest)
         if manifest.get('capabilities') != CAPABILITIES:
             raise ValueError('incompatible detector capabilities')
     else:
@@ -378,6 +380,33 @@ def _pipeline_capabilities(stages):
         capabilities[capability] = stages[stage]['status'] == 'available'
     capabilities['full_contract'] = all(capabilities[key] for key in ('software_spans', 'version_spans', 'version_linking', 'intent', 'sentiment'))
     return capabilities
+
+
+def publish_detector_decoder(source: Path, output: Path, decoder: str, *, allow_plumbing=False) -> dict:
+    """Copy verified weights into a distinct, inference-only checkpoint variant."""
+    source, output = Path(source), Path(output)
+    inference_decoder({'inference': {'decoder': decoder}})
+    if os.path.lexists(output):
+        raise FileExistsError(output)
+    parent_hash = digest((source / 'manifest.json').read_bytes())
+    manifest = verify_stage_checkpoint(source, 'detector', allow_plumbing=allow_plumbing)
+    if digest((source / 'manifest.json').read_bytes()) != parent_hash:
+        raise ValueError('changed detector manifest during verification')
+    manifest['inference'] = {'decoder': decoder}
+    manifest['inference_provenance'] = {'parent_manifest_sha256': parent_hash,
+        'parent_checkpoint': str(source.resolve()), 'weights_retrained': False,
+        'code_files': [{'path': name, 'sha256': digest(Path(__file__).with_name(name).read_bytes())}
+                       for name in ('decode.py', 'features.py', 'predict.py')]}
+    output.mkdir(parents=True, exist_ok=False)
+    for record in manifest['files']:
+        payload = verified_path(source, record).read_bytes()
+        if digest(payload) != record['sha256']:
+            raise ValueError('changed detector source before copy')
+        write_once(output / record['path'], payload)
+    if digest((source / 'manifest.json').read_bytes()) != parent_hash:
+        raise ValueError('changed detector manifest before publication')
+    write_once(output / 'manifest.json', json_bytes(manifest))
+    return manifest
 
 
 def publish_pipeline(detector: Path, stages: dict[str, Path], output: Path, *, allow_plumbing=False) -> dict:
