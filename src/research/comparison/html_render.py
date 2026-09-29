@@ -476,7 +476,8 @@ def _timing_table(rows):
 def _field_score_table(scores):
     parts = ['<section id="fields"><div class="section-head"><h2>Field scores</h2>',
              '<p>Selected-review exact occurrences. Full-class macro is N/A when any reference class is missing; '
-             'observed-class macro is shown separately. Alias accuracy is conditional on reviewed endpoint pairs, not end-to-end.</p></div>',
+             'observed-class macro includes any class with defined F1, including predicted-only classes, so its class set can differ by model. '
+             'Use the per-class counts for comparisons. Alias accuracy is conditional on reviewed endpoint pairs, not end-to-end.</p></div>',
              '<div class="table-scroll"><table><thead><tr><th>Arm</th><th>Intent classes (TP / FP / FN)</th>',
              '<th>Intent macro</th><th>Observed-class macro</th><th>Exact intent set</th>',
              '<th>Sentiment classes (TP / FP / FN)</th><th>Sentiment macro</th><th>Sentiment observed-class macro</th><th>Complete occurrence F1</th>',
@@ -515,6 +516,8 @@ def render_dashboard(data: dict) -> str:
     review_name = {'human_reviewed': 'Human reviewed', 'agent_provisional': 'Agent provisional'}.get(
         review_kind, str(provenance.get('review', 'Local comparison evidence')))
     population = provenance.get('population_documents', len(documents))
+    scored_notes = any(note.get('scope') == 'scored_population' for note in data.get('feedback', []))
+    notes_title = 'Analysis notes' if scored_notes else 'Later feedback'
     navigation = [('provenance', 'Provenance'), ('software', 'Software names'),
                   ('version', 'Versions'), ('links', 'Version owners'), ('passages', 'Passages')]
     if data.get('field_scores') is not None:
@@ -522,7 +525,7 @@ def render_dashboard(data: dict) -> str:
     if data.get('timing_rows'):
         navigation.insert(4, ('timing', 'Timing'))
     if data.get('feedback'):
-        navigation.append(('feedback', 'Later feedback'))
+        navigation.append(('feedback', notes_title))
     if data.get('appendix'):
         navigation.append(('appendix', 'Appendix'))
     parts = ['<!doctype html><html lang="en"><head><meta charset="utf-8">',
@@ -569,11 +572,14 @@ def render_dashboard(data: dict) -> str:
                  for index, document in enumerate(documents, 1))
     parts.append('</section>')
     if data.get('feedback'):
-        parts.append('<section id="feedback"><h2>Later feedback</h2><p class="muted">Observations here are unscored and outside the frozen comparison population.</p>')
+        caption = ('Interpretations of scored results; any unscored observations are identified.' if scored_notes else
+                   'Observations here are unscored and outside the frozen comparison population.')
+        parts.append('<section id="feedback"><h2>' + notes_title + '</h2><p class="muted">' + caption + '</p>')
         for item in data['feedback']:
             parts.append('<article class="feedback"><h3>' + _escape(item.get('title', 'Observation')) + '</h3>'
                          '<p>' + _escape(item.get('body', '')) + '</p><p class="muted">'
-                         + _escape(item.get('provenance', '')) + '</p></article>')
+                         + _escape(item.get('provenance', '')) +
+                         (' · Unscored observation' if scored_notes and item.get('scope') != 'scored_population' else '') + '</p></article>')
         parts.append('</section>')
     parts.append(_appendix(data.get('appendix')))
     parts.append('</main><footer>Generated from local comparison evidence. No network assets are required.</footer></body></html>')

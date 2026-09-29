@@ -1,0 +1,109 @@
+[
+  {
+    "title": "Cycle 001 result: better name extraction, not a complete winner",
+    "body": "On 50 fresh, paper-disjoint OpenAlex snippets, software-name precision / recall / F1 is 87.3% / 46.6% / 60.8% for full-label-005, versus 82.5% / 39.1% / 53.1% for full-label-004 and 85.7% / 27.1% / 41.1% for the installed Softcite. These are source-only agent-provisional references, not human gold. All scored extraction systems completed all 50 snippets. Candidate 005 remains opt-in: version ownership regressed on this sample, and most software occurrences are still missed.",
+    "provenance": "Cycle 001 spans/report.json and links/report.json; 133 eligible software spans, 2026-09-30. Two source-only agent reviews preceded inference.",
+    "scope": "scored_population",
+    "review_kind": "agent_provisional"
+  },
+  {
+    "title": "What the fine-tuning control establishes",
+    "body": "Base SciBERT has no trained software extraction head, so its extraction score is N/A. The matched frozen-encoder plus trained-head control scored 0.0% name F1 under this fixed recipe; the fine-tuned detector scored 60.8%. Initial encoder/head hashes, examples and sampling counts matched; the frozen encoder stayed unchanged while its head changed. This supports updating the encoder under this recipe, not a claim that every frozen-feature approach would fail. This control is not an optimized linear probe. The old-versus-new pipeline comparison changes data and multiple trained stages, so it cannot isolate which stage caused each gain.",
+    "provenance": "training-verification.json, pinned training manifests and spans/report.json; base capabilities appendix.",
+    "scope": "scored_population",
+    "review_kind": "agent_provisional"
+  },
+  {
+    "title": "Intent improved; aliases and expressed sentiment remain weak",
+    "body": "The used-intent F1 rose from 31.3% to 62.5%; candidate 005 recovered all 10 used references but made 12 extra used predictions. Complete-occurrence F1 rose from 33.2% to 43.2%; this requires the name, versions, intent and sentiment to match, with aliases scored separately. Both reviewed positive alias pairs were missed, as were all 15 positive/negative sentiment references. Neutral sentiment improved; that is not evidence of better opinion recognition. Created/shared intent and mixed sentiment lack positive test support. Observed-class macro includes predicted-only classes, so the class set can differ by model; inspect per-class counts instead of treating it as a fixed-label macro comparison. Softcite sentiment, aliases and complete-occurrence scores are unsupported, not zero.",
+    "provenance": "Verified field scores from saved MPS first-pass outputs and focused-evaluation-002 attribute references. One ambiguous-version passage is excluded from complete-occurrence scoring, leaving 131 eligible occurrences.",
+    "scope": "scored_population",
+    "review_kind": "agent_provisional"
+  },
+  {
+    "title": "Speed depends on the measure and deployment",
+    "body": "Candidate 005 processed 16.50 snippets/s on MPS versus Softcite's 2.74, about 6.0 times the aggregate throughput. In the CPU benchmark pass, candidate 005 processed 7.05/s versus 2.74 for the same Softcite service, about 2.6 times. Softcite had the faster median: 5.5 ms versus 30.8 ms on MPS and 69.1 ms on CPU. Candidate MPS p95 was 214 ms versus Softcite's 1510 ms. Candidate throughput was about 19% lower than full-label-004's 20.44/s. These are three repeated batch-one passes through the complete pipelines, not detector-only timing. The Softcite service is an amd64 CPU Docker deployment on an arm64 Mac; its load entry measures a health check, not cold startup. Do not generalize these results to native Softcite or other hardware.",
+    "provenance": "timing-mps-001 and timing-cpu-001 verified manifests; 150 successful requests per arm/configuration, no failures. Apple M4 Max, 16 CPU cores, 128 GiB RAM.",
+    "scope": "scored_population",
+    "review_kind": "agent_provisional"
+  },
+  {
+    "title": "Next small experiment and external sharing gate",
+    "body": "First review the examples below and a random selection of whole negative passages. Prioritize train-only examples for release families such as 3.x, citation releases versus section numbers, compound-name boundaries, repeated mentions, short aliases such as np, and expressed sentiment from more papers. Keep these 50 now-exposed evaluation snippets out of training. Version and alias claims need a larger untouched test set than three links and two pairs. The sample is seeded but query-enriched and relevance-ranked, not uniformly random research. Before sharing with OpenAlex, obtain human adjudication, audit snippet redistribution rights, and keep hardware and extractor-configuration caveats attached. No report has been sent externally.",
+    "provenance": "Interpretation of Cycle 001 evidence and preserved acquisition/exposure manifests. This is a proposed next cycle, not additional completed training.",
+    "scope": "scored_population",
+    "review_kind": "agent_provisional"
+  },
+  {
+    "title": "Name recovery: W4241894848",
+    "body": "The candidate recovers all six MATLAB, Java and TRNSYS occurrences, versus one of six with the old detector. It also removes the old false software PVTType and false version 27. This is a clear exact-boundary win on this passage.",
+    "provenance": "https://openalex.org/W4241894848; source-only reference and exact saved detector spans.",
+    "scope": "scored_population",
+    "review_kind": "agent_provisional",
+    "document_ids": ["openalex-snippet:6611db8ea4e00cae3683154d8feb74ea24b9e3b73a7760ea90c64f89d63ba8e4"]
+  },
+  {
+    "title": "Fewer false names, one boundary still wrong: W7019046985",
+    "body": "The old detector missed both Scikit-learn references and produced DARWIN-related false positives. The candidate removes those false positives and finds the first Scikit-learn exactly, but truncates the second to Scikit. More hyphenated-name boundary examples are warranted.",
+    "provenance": "https://openalex.org/W7019046985; source-only reference and exact saved detector spans.",
+    "scope": "scored_population",
+    "review_kind": "agent_provisional",
+    "document_ids": ["openalex-snippet:b38395cc306bdf1572d9c958105dc4408c402709ede93c8a8a1be12cb2d3312e"]
+  },
+  {
+    "title": "Recovered names, unresolved ownership: W4246508130",
+    "body": "Candidate 005 recovers SPSS and Windows, which the old detector missed. Both still incorrectly label the vendor SPSS GmbH as software. The owner of version 7 is ambiguous in the source and masked: this passage cannot prove that version ownership was fixed.",
+    "provenance": "https://openalex.org/W4246508130; source-only reference, ignored version endpoint and saved outputs.",
+    "scope": "scored_population",
+    "review_kind": "agent_provisional",
+    "document_ids": ["openalex-snippet:f728afc011167ba518c8b7cf6cfa82e164ffddc8d0c333196737569a5702c183"]
+  },
+  {
+    "title": "Boundary regression: W2151591509",
+    "body": "The old detector found both scikit-learn names exactly. The candidate expands the first to scikit-learn toolbox, turning a true positive into a false positive plus a missed exact reference. Include generic trailing descriptors as negatives in future training.",
+    "provenance": "https://openalex.org/W2151591509; source-only reference and exact saved detector spans.",
+    "scope": "scored_population",
+    "review_kind": "agent_provisional",
+    "document_ids": ["openalex-snippet:94160aab42bc72aba87f28b88f15a296ac0c6a53738eb2189d09875c86696f46"]
+  },
+  {
+    "title": "Repeated-name regression: W3006631633",
+    "body": "The old detector found all four ImageJ / NIH Image occurrences. The candidate finds only two exactly, misses the leading ImageJ and truncates NIH Image to NIH. The gain in aggregate name F1 does not remove this regression.",
+    "provenance": "https://openalex.org/W3006631633; source-only reference and exact saved detector spans.",
+    "scope": "scored_population",
+    "review_kind": "agent_provisional",
+    "document_ids": ["openalex-snippet:cd0355968e0ca7c56ca134969cbe9bb03dc82edfa76963f6b76cbaa0c3baaecd"]
+  },
+  {
+    "title": "Version-family regression: W3032112288",
+    "body": "The old pipeline correctly extracted Python and linked 3.x. Candidate 005 emits no names or versions here. Fresh-sample ownership therefore falls from one correct edge out of three to zero. More version-family training and a larger unseen version set are needed before promoting this checkpoint as the overall best model.",
+    "provenance": "https://openalex.org/W3032112288; source-only reference and saved full-pipeline outputs.",
+    "scope": "scored_population",
+    "review_kind": "agent_provisional",
+    "document_ids": ["openalex-snippet:65938f52a23b711bfefacbfe4ca7bef555a857b4afc15875bf2acd55feec8478"]
+  },
+  {
+    "title": "Citation releases remain missed: W4312627146",
+    "body": "This passage contains four scikit-learn references and two explicit 1.1.2 releases. The candidate finds only one name exactly, truncates two others to Scikit, and extracts neither version. Citation-format releases need separate coverage from ordinary methods sentences.",
+    "provenance": "https://openalex.org/W4312627146; source-only reference and exact saved detector spans.",
+    "scope": "scored_population",
+    "review_kind": "agent_provisional",
+    "document_ids": ["openalex-snippet:b1c9ac4f5eaddb6c91a392e584e7a7dba07546164c11ab729783bf3af945d41f"]
+  },
+  {
+    "title": "Short aliases need detection first: W4392242525",
+    "body": "The candidate recognizes numpy and NumPy but misses all three np occurrences. An alias head cannot connect endpoints that the detector never proposes. Both reviewed positive alias pairs in the 50-paper sample are missed.",
+    "provenance": "https://openalex.org/W4392242525; source-only reference and saved detector/alias outputs.",
+    "scope": "scored_population",
+    "review_kind": "agent_provisional",
+    "document_ids": ["openalex-snippet:ed54074aac3960197770a37ce640bb114eb53c9b47da458645c3c929e8dcfa40"]
+  },
+  {
+    "title": "Section number mistaken for release: W4395445785",
+    "body": "The candidate's only version false positive in this sample is 1.1.11, a numbered heading rather than a software release. Negative examples should cover document structure as well as nearby years and citations.",
+    "provenance": "https://openalex.org/W4395445785; source-only reference and exact saved version span.",
+    "scope": "scored_population",
+    "review_kind": "agent_provisional",
+    "document_ids": ["openalex-snippet:b15eec9622e846105e04b0456e89a6f8163b17a68afb3c2814262a8530d97b79"]
+  }
+]

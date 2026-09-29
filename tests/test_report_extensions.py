@@ -277,6 +277,33 @@ def test_ignored_version_endpoint_masks_complete_fields_without_mutating_referen
     assert scores['version_field_masked_documents'] == ['ambiguous']
 
 
+def test_scored_notes_attach_to_selected_passages_and_review_kind_only():
+    from research.comparison.html_report import _attach_notes
+
+    notes = [{'title': 'Win', 'body': 'Six names found.', 'provenance': 'Source audit',
+              'scope': 'scored_population', 'review_kind': 'agent_provisional', 'document_ids': ['d']}]
+    passages = [{'document_id': 'd', 'summaries': []}]
+    assert _attach_notes(notes, passages, 'agent_provisional') == notes
+    assert passages[0]['summaries'] == ['Analysis: Win. Six names found.']
+    human = [{'document_id': 'd', 'summaries': []}]
+    assert _attach_notes(notes, human, 'human_reviewed') == [] and human[0]['summaries'] == []
+    with pytest.raises(ValueError, match='outside'):
+        _attach_notes([{**notes[0], 'document_ids': ['missing']}], passages, 'agent_provisional')
+
+
+def test_scored_notes_are_not_described_as_unscored_feedback():
+    from research.comparison.html_render import render_dashboard
+    from test_comparison_html_render import sample_data
+
+    data = sample_data()
+    data['feedback'] = [{'title': '<Win>', 'body': 'Measured improvement.',
+                         'provenance': 'Agent-provisional audit', 'scope': 'scored_population'}]
+    page = render_dashboard(data)
+    assert 'Analysis notes' in page
+    assert 'Observations here are unscored and outside' not in page
+    assert '&lt;Win&gt;' in page and '<Win>' not in page
+
+
 def test_source_only_wording_requires_explicit_flags_on_every_reference():
     from research.comparison.html_report import _reference_limit
 

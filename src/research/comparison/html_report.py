@@ -334,6 +334,24 @@ def _reference_limit(refs):
     return 'Development diagnostic, not a held-out benchmark. No general superiority claim follows from these scores.'
 
 
+def _attach_notes(notes, passages, review_kind):
+    by_id = {p['document_id']: p for p in passages}
+    selected = []
+    for note in notes:
+        if note.get('scope') == 'scored_population':
+            if note.get('review_kind') not in REVIEW_KINDS:
+                raise ValueError('scored notes require a valid review kind')
+            ids = note.get('document_ids', [])
+            if not isinstance(ids, list) or any(not isinstance(i, str) or i not in by_id for i in ids):
+                raise ValueError('scored note refers to documents outside the report population')
+            if note['review_kind'] != review_kind:
+                continue
+            for ident in dict.fromkeys(ids):
+                by_id[ident]['summaries'].append(f"Analysis: {note['title']}. {note['body']}")
+        selected.append(note)
+    return selected
+
+
 def build_html_report(run, spans, links, output, *, appendix=None, notes=None,
                       review_kind='agent_provisional', timing=()):
     run, spans, output = Path(run), Path(spans), Path(output)
@@ -484,7 +502,7 @@ def build_html_report(run, spans, links, output, *, appendix=None, notes=None,
             else:
                 if not isinstance(value, list) or any(not isinstance(v, dict) or not {'title', 'body', 'provenance'} <= v.keys() for v in value):
                     raise ValueError('notes must be a list of attributed feedback records')
-                feedback = value
+                feedback = _attach_notes(value, presentation, review_kind)
     data = {'schema_version': 'comparison-dashboard-1', 'title': 'Software extraction · comparison workbench',
             'provenance': {'review_kind': review_kind, 'population_documents': len(documents),
                            'run_manifest_sha256': run_hash, 'reference_sha256': reference_hash,
