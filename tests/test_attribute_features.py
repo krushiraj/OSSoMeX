@@ -85,6 +85,52 @@ def test_empty_alias_layer_has_no_targets(tokenizer):
     assert summarize_support(result)['alias']['subtype_counts'] == {'explicit_alternative_name': 1}
 
 
+def test_checked_version_negatives_survive_unannotated_other_fields(tokenizer):
+    from research.annotations.validation import validate_reply
+    from research.training.attribute_features import build_attribute_features
+    document, item = bundle()
+    annotation = item['annotation']
+    fields = {field: field in ('software', 'versions') for field in FIELDS}
+    for occurrence in annotation['occurrences']:
+        occurrence.update(known=dict(fields), intents=None, sentiment=None,
+                          evidence={'intents': [], 'sentiment': []})
+    annotation['covered_regions'][0].update(status='partial', fields=fields)
+    reply = {**annotation, **{key: item['task'][key] for key in
+                             ('task_id', 'document_id', 'text_revision', 'policy_version')},
+             'attempt_id': 'names-versions-only', 'status': 'partial',
+             'annotator': {'runtime': 'current_codex_session', 'model_identifier': None,
+                           'prompt_hash': 'b' * 64, 'run_identifier': 'test'}}
+    item['annotation'] = validate_reply(item['task'], reply)
+    result = build_attribute_features(document, [item], tokenizer, {})
+    assert [(row['first_span'], row['targets'], row['known'])
+            for row in result['features']['linker']] == [
+                ({'start': 8, 'end': 13}, [1], [True]),
+                ({'start': 23, 'end': 28}, [0], [True])]
+    assert result['features']['intent'] == result['features']['sentiment'] == []
+
+    # Losing either checked field must still mask the negative, not invent absence.
+    for field in ('software', 'versions'):
+        masked = deepcopy(item)
+        masked['annotation']['covered_regions'][0]['fields'][field] = False
+        rows = build_attribute_features(document, [masked], tokenizer, {})['features']['linker']
+        assert [row['targets'] for row in rows] == [[1]]
+
+    # Unresolved intervening text and endpoints outside owned coverage are not negatives.
+    for mutation in ('unresolved', 'outside_coverage'):
+        masked = deepcopy(item)
+        if mutation == 'unresolved':
+            masked['annotation']['unresolved_regions'] = [{'start': 19, 'end': 22}]
+            masked['annotation']['covered_regions'] = [
+                {**deepcopy(annotation['covered_regions'][0]), 'end': 19},
+                {**deepcopy(annotation['covered_regions'][0]), 'start': 22}]
+        else:
+            masked['annotation']['covered_regions'][0]['end'] = 19
+            masked['annotation']['unresolved_regions'] = [{'start': 19, 'end': 29}]
+        masked['annotation'] = validate_reply(masked['task'], masked['annotation'])
+        rows = build_attribute_features(document, [masked], tokenizer, {})['features']['linker']
+        assert [row['targets'] for row in rows] == [[1]]
+
+
 def test_unknown_intent_bits_and_sentiment_are_masked(tokenizer):
     from research.training.attribute_features import build_attribute_features
     document, item = bundle('We used NumPy.')

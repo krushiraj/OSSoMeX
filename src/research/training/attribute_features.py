@@ -207,7 +207,8 @@ def _complete_relation(item, first, second):
         return False
     if any(region['start'] < hi and lo < region['end'] for region in annotation.get('unresolved_regions', [])):
         return False
-    return any(region.get('status') == 'complete' and region.get('fields', {}).get('software') is True
+    # Other unannotated attributes do not invalidate checked name/version coverage.
+    return any(region.get('fields', {}).get('software') is True
                and region.get('fields', {}).get('versions') is True
                and region['start'] <= lo < hi <= region['end'] for region in annotation['covered_regions'])
 
