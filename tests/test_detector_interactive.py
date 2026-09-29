@@ -43,14 +43,16 @@ def api():
     return importlib.import_module('research.training.interactive')
 
 
-def run_keys(keys, *, detector_class=StubDetector, tmp_path=None, monkeypatch=None, input_mode='bracketed'):
+def run_keys(keys, *, detector_class=StubDetector, tmp_path=None, monkeypatch=None, input_mode='bracketed',
+             output_format='jsonl', decode=True):
     # Playwright's session fixture owns the main thread's event loop during the full suite.
     with ThreadPoolExecutor(max_workers=1) as executor:
         return executor.submit(_run_keys, keys, detector_class=detector_class,
-                               tmp_path=tmp_path, monkeypatch=monkeypatch, input_mode=input_mode).result(timeout=15)
+                               tmp_path=tmp_path, monkeypatch=monkeypatch, input_mode=input_mode,
+                               output_format=output_format, decode=decode).result(timeout=15)
 
 
-def _run_keys(keys, *, detector_class, tmp_path, monkeypatch, input_mode):
+def _run_keys(keys, *, detector_class, tmp_path, monkeypatch, input_mode, output_format, decode):
     interactive = api()
     loaded = []
 
@@ -65,13 +67,46 @@ def _run_keys(keys, *, detector_class, tmp_path, monkeypatch, input_mode):
     with create_pipe_input() as pipe:
         session = interactive.build_prompt_session(input=pipe, output=DummyOutput())
         pipe.send_text(keys)
+        options = {} if output_format is None else {'output_format': output_format}
         status = interactive.run_interactive(Path('checkpoint'), 'cpu', input_mode,
                                             detector_factory=factory, prompt_session=session,
-                                            stdin=Terminal(), stdout=stdout, stderr=stderr)
+                                            stdin=Terminal(), stdout=stdout, stderr=stderr, **options)
         assert session.history.get_strings() == []
     if tmp_path is not None:
         assert list(tmp_path.iterdir()) == []
-    return status, loaded, [json.loads(line) for line in stdout.getvalue().splitlines()], stderr.getvalue()
+    output = stdout.getvalue()
+    rows = [json.loads(line) for line in output.splitlines()] if decode else output
+    return status, loaded, rows, stderr.getvalue()
+
+
+def test_default_pretty_decodes_consecutive_submissions():
+    source = 'NumPy\r\n\r\n🧪 Python\n'
+    keys = '\x1b[200~' + source + '\x1b[201~\rPython\r\x04'
+    status, loaded, output, stderr = run_keys(keys, output_format=None, decode=False)
+    assert output.startswith('{\n  "schema_version": "detector-prediction-1",\n')
+    assert '}\n\n{\n' in output
+    assert '🧪 Python' in output
+    decoder = json.JSONDecoder()
+    rows = []
+    remaining = output
+    while remaining.strip():
+        row, end = decoder.raw_decode(remaining.lstrip())
+        rows.append(row)
+        remaining = remaining.lstrip()[end:]
+    assert [row['document_id'] for row in rows] == ['interactive-1', 'interactive-2']
+    assert [row['text'] for row in rows] == [source, 'Python']
+    assert rows[0]['text_revision'] == 'sha256:' + hashlib.sha256(source.encode()).hexdigest()
+    assert len(loaded) == 1
+    assert status == 0
+    assert 'Enter' in stderr and 'Ctrl+D' in stderr
+
+
+def test_explicit_jsonl_emits_exactly_two_lines():
+    status, loaded, output, _ = run_keys('NumPy\rPython\r\x04', output_format='jsonl', decode=False)
+    assert len(output.splitlines()) == 2
+    assert [json.loads(line)['text'] for line in output.splitlines()] == ['NumPy', 'Python']
+    assert len(loaded) == 1
+    assert status == 0
 
 
 def test_bracketed_paste_is_one_unchanged_submission(tmp_path, monkeypatch):
@@ -230,7 +265,7 @@ def test_line_mode_crlf_pair_split_across_input_deliveries():
             return interactive.run_interactive(Path('checkpoint'), 'cpu', 'lines',
                                                detector_factory=lambda *args: detector,
                                                prompt_session=session, stdin=Terminal(),
-                                               stdout=stdout, stderr=stderr)
+                                               stdout=stdout, stderr=stderr, output_format='jsonl')
 
         with ThreadPoolExecutor(max_workers=1) as executor:
             result = executor.submit(run)
@@ -266,9 +301,13 @@ def test_non_tty_rejected_before_loading():
     assert stdout.getvalue() == ''
 
 
-def test_cli_registers_interactive_with_explicit_input_mode(monkeypatch):
+@pytest.mark.parametrize('output_format', [None, 'jsonl'])
+def test_cli_registers_interactive_with_explicit_input_mode(output_format, monkeypatch):
     interactive = api()
     received = []
-    monkeypatch.setattr(interactive, 'run_interactive', lambda *args: received.append(args) or 130)
-    assert main(['detector', 'interactive', '--model', 'local', '--device', 'cpu', '--input-mode', 'lines']) == 130
-    assert received == [(Path('local'), 'cpu', 'lines')]
+    monkeypatch.setattr(interactive, 'run_interactive', lambda *args, **kwargs: received.append((args, kwargs)) or 130)
+    args = ['detector', 'interactive', '--model', 'local', '--device', 'cpu', '--input-mode', 'lines']
+    if output_format is not None:
+        args.extend(['--format', output_format])
+    assert main(args) == 130
+    assert received == [((Path('local'), 'cpu', 'lines'), {'output_format': output_format or 'pretty'})]

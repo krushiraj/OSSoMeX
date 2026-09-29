@@ -9,8 +9,11 @@ import sys
 import termios
 import time
 
+import pytest
 
-def test_terminal_prompts_stay_on_stderr_and_paste_stays_one_request(tmp_path):
+
+@pytest.mark.parametrize('output_format', [None, 'jsonl'])
+def test_terminal_prompts_stay_on_stderr_and_paste_stays_one_request(tmp_path, output_format):
     script = '''
 import json, sys
 from pathlib import Path
@@ -22,6 +25,8 @@ class Detector:
         return {"schema_version": "detector-prediction-1", "status": "no_mentions", **document}
 raise SystemExit(run_interactive(Path("stub"), "cpu", "bracketed", detector_factory=Detector))
 '''
+    if output_format is not None:
+        script = script.replace('detector_factory=Detector)', 'detector_factory=Detector, output_format="jsonl")')
     master, slave = pty.openpty()
     process = subprocess.Popen([sys.executable, '-B', '-c', script], stdin=slave,
                                stdout=subprocess.PIPE, stderr=slave, cwd=tmp_path,
@@ -29,6 +34,18 @@ raise SystemExit(run_interactive(Path("stub"), "cpu", "bracketed", detector_fact
     os.close(slave)
     terminal = bytearray()
     transcript = bytearray()
+
+    def read_prediction():
+        output = process.stdout.readline()
+        if output_format is None:
+            if output == b'\n':
+                output += process.stdout.readline()
+            assert output.lstrip() == b'{\n', output
+            while not output.endswith(b'\n}\n'):
+                line = process.stdout.readline()
+                assert line, output
+                output += line
+        return output
 
     def wait_for_terminal(marker):
         deadline = time.monotonic() + 10
@@ -50,20 +67,31 @@ raise SystemExit(run_interactive(Path("stub"), "cpu", "bracketed", detector_fact
         assert not select.select([process.stdout], [], [], 0.2)[0], 'paste submitted before Enter'
         os.write(master, b'\r')
         assert select.select([process.stdout], [], [], 10)[0]
-        first = process.stdout.readline()
+        first = read_prediction()
         terminal.clear()
         wait_for_terminal(b'\x1b[?2004h')
         os.write(master, b'Python\r')
         assert select.select([process.stdout], [], [], 10)[0]
-        second = process.stdout.readline()
+        second = read_prediction()
         terminal.clear()
         wait_for_terminal(b'\x1b[?2004h')
         os.write(master, b'discard this\x04')
         remaining, _ = process.communicate(timeout=10)
         assert process.returncode == 0
-        assert remaining == b''
-        assert b'\x1b' not in first + second
-        rows = [json.loads(first), json.loads(second)]
+        output = first + second + remaining
+        assert b'\x1b' not in output
+        if output_format == 'jsonl':
+            assert remaining == b''
+            assert len(output.splitlines()) == 2
+            rows = [json.loads(first), json.loads(second)]
+        else:
+            assert output.startswith(b'{\n  "schema_version":')
+            assert b'}\n\n{\n' in output
+            decoder = json.JSONDecoder()
+            text = output.decode()
+            first_row, end = decoder.raw_decode(text)
+            second_row, end = decoder.raw_decode(text[end:].lstrip())
+            rows = [first_row, second_row]
         assert [r['text'] for r in rows] == ['NumPy\n\n🧪 Python\n', 'Python']
         assert [r['document_id'] for r in rows] == ['interactive-1', 'interactive-2']
         assert transcript.count(b'DETECTOR_LOADED') == 1

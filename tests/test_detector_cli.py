@@ -9,6 +9,83 @@ from research.cli import main
 from research.training import cli as detector_cli
 
 
+def test_render_prediction_pretty_preserves_unicode_and_values():
+    from research.training.json_output import render_prediction
+
+    assert render_prediction({'name': 'NumPy 🧪'}) == '{\n  "name": "NumPy 🧪"\n}'
+    result = {'name': 'NumPy 🧪', 'scores': [0.25, 0.75], 'available': False, 'sentiment': None}
+    assert json.loads(render_prediction(result)) == result
+
+
+def test_render_prediction_jsonl_is_one_line():
+    from research.training.json_output import render_prediction
+
+    result = {'name': 'NumPy', 'text': 'first\r\nsecond'}
+    rendered = render_prediction(result, 'jsonl')
+    assert '\n' not in rendered
+    assert json.loads(rendered) == result
+
+
+@pytest.mark.parametrize('output_format', ['pretty', 'jsonl'])
+def test_render_prediction_rejects_nonfinite_scores(output_format):
+    from research.training.json_output import render_prediction
+
+    with pytest.raises(ValueError):
+        render_prediction({'score': float('nan')}, output_format)
+
+
+def test_render_prediction_rejects_unknown_format():
+    from research.training.json_output import render_prediction
+
+    with pytest.raises(ValueError, match='format'):
+        render_prediction({'name': 'NumPy'}, 'xml')
+
+
+@pytest.mark.parametrize('output_format', [None, 'jsonl'])
+def test_predict_stdout_formats_two_unicode_results(output_format, tmp_path, monkeypatch, capsys):
+    class FakeDetector:
+        def __init__(self, checkpoint, device):
+            pass
+
+        def predict(self, document):
+            return {'document_id': document['document_id'], 'name': document['text'], 'status': 'no_mentions'}
+
+    input_path = tmp_path / 'input.jsonl'
+    input_path.write_text('{"document_id": "a", "text": "NumPy 🧪"}\n'
+                          '{"document_id": "b", "text": "Python"}\n')
+    monkeypatch.setattr('research.training.predict.Detector', FakeDetector)
+    args = ['detector', 'predict', '--model', 'unused', '--input', str(input_path)]
+    if output_format is not None:
+        args.extend(['--format', output_format])
+    assert main(args) == 0
+    captured = capsys.readouterr()
+    if output_format == 'jsonl':
+        assert len(captured.out.splitlines()) == 2
+        rows = [json.loads(line) for line in captured.out.splitlines()]
+    else:
+        assert captured.out == ('{\n  "document_id": "a",\n  "name": "NumPy 🧪",\n'
+                                '  "status": "no_mentions"\n}\n\n'
+                                '{\n  "document_id": "b",\n  "name": "Python",\n'
+                                '  "status": "no_mentions"\n}\n')
+        decoder = json.JSONDecoder()
+        first, end = decoder.raw_decode(captured.out)
+        second, _ = decoder.raw_decode(captured.out[end:].lstrip())
+        rows = [first, second]
+    assert rows == [{'document_id': 'a', 'name': 'NumPy 🧪', 'status': 'no_mentions'},
+                    {'document_id': 'b', 'name': 'Python', 'status': 'no_mentions'}]
+    assert captured.err == ''
+
+
+@pytest.mark.parametrize('command', ['predict', 'interactive'])
+def test_prediction_commands_reject_unknown_format(command):
+    args = ['detector', command, '--model', 'unused', '--format', 'xml']
+    if command == 'predict':
+        args.extend(['--text', 'NumPy'])
+    with pytest.raises(SystemExit) as exc:
+        main(args)
+    assert exc.value.code == 2
+
+
 def test_stdin_preserves_crlf():
     document = detector_cli.read_stdin_document(BytesIO(b'We used NumPy.\r\n\r\n'), 'x')
     assert document == {'document_id': 'x', 'text': 'We used NumPy.\r\n\r\n'}
@@ -111,6 +188,8 @@ def test_predict_preserves_input_and_prediction_envelope(source, status, exit_co
             '--document-id', 'custom-id', *sources]
     if to_file:
         args.extend(['--output', str(output)])
+    else:
+        args.extend(['--format', 'jsonl'])
 
     assert main(args) == exit_code
 

@@ -8,6 +8,7 @@ import tempfile
 from typing import BinaryIO
 
 from ..data.manifest import read_jsonl
+from .json_output import render_prediction
 
 
 def read_stdin_document(stream: BinaryIO, document_id: str) -> dict:
@@ -58,18 +59,20 @@ def register(subparsers):
     source.add_argument('--stdin', action='store_true', help='One document from strict UTF-8 stdin')
     predict.add_argument('--document-id', default='input')
     predict.add_argument('--output', help='New immutable JSONL output; otherwise stdout')
+    predict.add_argument('--format', choices=('pretty', 'jsonl'), default='pretty')
     predict.add_argument('--device', choices=('auto', 'cpu', 'mps'), default='auto')
     predict.set_defaults(func=cmd_predict)
     interactive = commands.add_parser('interactive', help='Keep a local detector loaded for multiline terminal input')
     interactive.add_argument('--model', required=True)
     interactive.add_argument('--device', choices=('auto', 'cpu', 'mps'), default='auto')
     interactive.add_argument('--input-mode', choices=('bracketed', 'lines'), default='bracketed')
+    interactive.add_argument('--format', choices=('pretty', 'jsonl'), default='pretty')
     interactive.set_defaults(func=cmd_interactive)
 
 
 def cmd_interactive(args):
     from .interactive import run_interactive
-    return run_interactive(Path(args.model), args.device, args.input_mode)
+    return run_interactive(Path(args.model), args.device, args.input_mode, output_format=args.format)
 
 
 def cmd_prepare(args):
@@ -103,6 +106,8 @@ def cmd_predict(args):
         write_predictions(Path(args.output), results)
         print(json.dumps({'output': args.output, 'documents': len(results)}))
     else:
-        for result in results:
-            print(json.dumps(result, ensure_ascii=False))
+        for index, result in enumerate(results):
+            if index and args.format == 'pretty':
+                print()
+            print(render_prediction(result, args.format))
     return int(any(r['status'] == 'failure' for r in results))

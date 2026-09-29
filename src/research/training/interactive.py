@@ -2,10 +2,11 @@
 
 from contextlib import redirect_stdout
 import hashlib
-import json
 from pathlib import Path
 import sys
 from typing import TYPE_CHECKING, TextIO
+
+from .json_output import render_prediction
 
 if TYPE_CHECKING:
     from prompt_toolkit import PromptSession
@@ -98,7 +99,7 @@ def _failure_result(detector, document):
             'offset_unit': 'unicode_codepoint_half_open', 'chunks': [], 'spans': [], 'status': 'failure'}
 
 
-def run_interactive(model: Path, device: str, input_mode: str, *, detector_factory=None,
+def run_interactive(model: Path, device: str, input_mode: str, *, output_format='pretty', detector_factory=None,
                     prompt_session=None, stdin=None, stdout=None, stderr=None) -> int:
     stdin = sys.stdin if stdin is None else stdin
     stdout = sys.stdout if stdout is None else stdout
@@ -157,7 +158,9 @@ def run_interactive(model: Path, device: str, input_mode: str, *, detector_facto
         except Exception as exc:
             result = _failure_result(detector, document)
             print(f'Inference failed ({type(exc).__name__}).', file=stderr, flush=True)
-        print(json.dumps(result, ensure_ascii=False), file=stdout, flush=True)
+        if submission > 1 and output_format == 'pretty':
+            print(file=stdout)
+        print(render_prediction(result, output_format), file=stdout, flush=True)
         if result['status'] == 'failure':
             print('Inference failed; restart the command before another request.', file=stderr, flush=True)
             return 1
