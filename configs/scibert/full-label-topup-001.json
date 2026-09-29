@@ -1,0 +1,19 @@
+{
+  "training_data": {
+    "path": "data/scibert-v2/detector-training-002/manifest.json",
+    "sha256": "b6ed2d8802d78ad182f2f09d7ab3765f55d5efd4b050ef5762ddae5ebd265c04"
+  },
+  "exposures": {
+    "path": "data/scibert-v2/exposures-002/manifest.json",
+    "sha256": "9b06afdc23a23248d807f116fc840db56fc916f5ac2b383429f275f164fdab79"
+  },
+  "policy_sha256": "953fd119fbd9a4d3ddc0837c20f13ff1f3b48a9a0cf89059e154fb80c9601f04",
+  "selection": {
+    "seed": 42,
+    "max_passages": 6,
+    "random_per_parent": 3,
+    "signal_per_parent": 3,
+    "document_ids": ["ecosystems:10.1186/s12859-020-3513-y"],
+    "cues": ["Microsoft Excel", "GraphPad Prism", "erroneous fitting"]
+  }
+}
