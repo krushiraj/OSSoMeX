@@ -1,0 +1,85 @@
+[
+  {
+    "title": "Cycle 002: modest extraction gain, candidate remains experimental",
+    "body": "On 27 previously reserved passages with source-only agent-provisional labels, full-field name F1 is 60.9% for previous 005, 63.8% for candidate 006 and 59.6% for installed Softcite. Candidate precision / recall is 86.0% / 50.7%; Softcite achieves 100.0% / 42.5%. Candidate recovers two more names than 005 and six more than Softcite, but still misses 36 of 73 names. The span panel reports 61.4% / 64.3% for 005 / 006 because it excludes one boundary-crossing false positive each; use the more conservative full-field figures for the headline. This is not human gold, a sealed final test or proof of general superiority.",
+    "provenance": "Cycle 002 reserve27 spans, links and full-field scores; source references frozen before inference, 2026-09-30.",
+    "scope": "scored_population",
+    "review_kind": "agent_provisional"
+  },
+  {
+    "title": "Which outputs improve, and which do not",
+    "body": "Version-owner F1 rises from 57.1% to 66.7% by removing one false link, not by recovering additional gold links: both candidates recover two of only four references. Softcite recovers one. Complete-occurrence F1 rises from 30.5% to 37.4% on 68 eligible occurrences. Intent exact-set accuracy rises from 32.4% to 38.2%, but used-intent F1 falls from 19.0% to 12.5%. All models miss the one created reference. Positive-sentiment F1 stays 36.4%; both candidates miss both negative references. Shared intent, mixed sentiment and aliases have no positive test support. Softcite supports intent, but sentiment, aliases and complete-occurrence scoring are N/A.",
+    "provenance": "Verified reserve27 full-field scores and operational link metrics. Missing names count against end-to-end fields; unresolved version fields are masked.",
+    "scope": "scored_population",
+    "review_kind": "agent_provisional"
+  },
+  {
+    "title": "Fine-tuning evidence and limits",
+    "body": "Base SciBERT has no software extraction head, so its extraction score is N/A, not zero. The matched frozen-encoder plus trained-head control has 0.0% name F1 under the same fixed small-data recipe. Initial weights and sampling counts match, with the encoder unchanged only in the frozen control. This supports updating the encoder under this recipe; the control is not an optimized linear probe. Ten passages were added and all five model stages retrained together, so the old-versus-new comparison cannot isolate the contribution of any one annotation or head.",
+    "provenance": "Cycle 002 training-verification.json, data005, checkpoint manifests and saved span results.",
+    "scope": "scored_population",
+    "review_kind": "agent_provisional"
+  },
+  {
+    "title": "Measured speed: useful locally, not hardware-neutral",
+    "body": "Three batch-one passes give candidate 006 throughput of 13.44 passages/s on MPS versus 1.82 for Softcite, about 7.4 times. Candidate median / p95 is 35.3 / 368.3 ms versus Softcite 539.4 / 1542.9 ms. CPU candidate throughput is 4.87/s versus Softcite 1.81/s, about 2.7 times; its 91.4 ms median is slightly slower than 005's 88.4 ms despite improved aggregate throughput. Each arm has 81 successful requests per configuration and zero failures. Timing includes all five SciBERT stages but excludes loading/warmup. Softcite is an amd64 Wapiti/LinkBERT container on this arm64 Mac; this is not an equal-native-runtime benchmark or a cost measurement.",
+    "provenance": "Verified timing-mps and timing-cpu receipts; Apple M4 Max, 16 CPU cores, 128 GiB RAM. Softcite image and six active/configuration file hashes rechecked.",
+    "scope": "scored_population",
+    "review_kind": "agent_provisional"
+  },
+  {
+    "title": "Separate regression warning and next step",
+    "body": "Outside this fresh population, candidate 006 has one full-pipeline contract failure among the 50 exposed passages: a false name fragment receives prohibited version NA. The failed passage remains in full-pipeline scoring. Batch CLI now records such a failure, continues other inputs and exits nonzero; the model error is not fixed. Keep 005 as the existing choice and 006 opt-in. The seven exposed CLI cases improve version-owner F1 from 82.4% to 86.8%, and both candidates link only 13.5 to macOS in the normalized environment passage. Those regressions are not pooled into this report. Next priorities are invalid-version partial handling and train-only examples for author use, compound/repeated names, aliases and opinions from more papers. Raw passages remain local; the OpenAlex aggregate draft and model card have not been sent.",
+    "provenance": "Separate cycle002 exposed50 field-scores/failure receipt and regression7 reports; no fresh reserve27 score is inferred from these other populations.",
+    "scope": "scored_population",
+    "review_kind": "agent_provisional"
+  },
+  {
+    "title": "Partial recall gain on OCR-glued names",
+    "body": "This passage has nine accepted software names. Previous 005 finds only one exactly; candidate 006 finds four; Softcite finds none. Candidate improves recovery here but still misses most names. OCR-glued text and repeated-name coverage remain useful train-only targets.",
+    "provenance": "Exact frozen source/reference and saved predictions; independent agent review.",
+    "scope": "scored_population",
+    "review_kind": "agent_provisional",
+    "document_ids": ["openalex-snippet:645f93a02213b2a79b40f1d6d5f458e509814fbb655fa32006cb1270858906e8"]
+  },
+  {
+    "title": "Compound-name boundary remains wrong",
+    "body": "Both SciBERT pipelines split the accepted SPSS/PC+ mention into SPSS and PC instead of returning the whole software name. Better version ownership cannot repair an incorrect name endpoint. The damaged nearby version token is unresolved, not a gold version to guess.",
+    "provenance": "Exact frozen source/reference and saved predictions; ambiguous version masked.",
+    "scope": "scored_population",
+    "review_kind": "agent_provisional",
+    "document_ids": ["openalex-snippet:a15d7e3533e2c7e4b362e4a884d10aac97ecf17651bc50154d4769de8d30e8a9"]
+  },
+  {
+    "title": "A false version removed, but the name still needs work",
+    "body": "Previous 005 links the single character J as a version of IMAGEJ. Candidate 006 removes that false version link, but merges IMAGEJ SOFTWAREImageJ into one incorrect name span. This helps version precision without solving the software-name boundary error.",
+    "provenance": "Exact frozen source/reference, version proposals and owner links.",
+    "scope": "scored_population",
+    "review_kind": "agent_provisional",
+    "document_ids": ["openalex-snippet:00e867267fa298b0f4dd1cafeebe3a65844b7154bd9080bc8163cb3c381d9242"]
+  },
+  {
+    "title": "Why the two name score panels differ",
+    "body": "The accepted software boundary is MATLAB. Previous 005 predicts MATLAB Live and candidate 006 predicts MATLAB Live Script. Both are false positives under the full-field scorer. The span scorer excludes them because they cross the boundary at character 101 between adjacent SOFTWARE-complete regions split only for an unknown used-intent label. Its lack of same-label region coalescing produces one fewer false positive. Use full-field name scores for the headline; this discrepancy must be unified before a definitive benchmark.",
+    "provenance": "Independent audit of reference coverage and both scoring paths; no prediction/reference edits.",
+    "scope": "scored_population",
+    "review_kind": "agent_provisional",
+    "document_ids": ["openalex-snippet:aa112ae5be322e51386d7f1ff9aad57b91113551ab9644611485ce6f117f1cb8"]
+  },
+  {
+    "title": "Creation missed; use intent regresses",
+    "body": "The provisional reference marks SiPy as created. Both candidates detect it but label it mentioned. Previous 005 correctly marks the Python occurrence at character 184 used; candidate 006 instead predicts mentioned. More source-diverse author-intent supervision is needed, and the rule for authors introducing their own tool still needs Krushi's pending clarification.",
+    "provenance": "Frozen source-only reference and full-pipeline intent outputs; agent provisional, not human adjudication.",
+    "scope": "scored_population",
+    "review_kind": "agent_provisional",
+    "document_ids": ["openalex-snippet:bad997fa3374060476f5437bbf4f72d02334393d36000b7d6accd6491fb58629"]
+  },
+  {
+    "title": "Software-directed opinions are still missed",
+    "body": "The provisional references include praise of Numpy's efficient implementation and criticism of its limitations. Both candidates mark the first two occurrences not expressed and miss the third. Aggregate sentiment gains come from neutral cases here, not improved negative-opinion recognition.",
+    "provenance": "Exact frozen source/reference and sentiment predictions; independent agent review.",
+    "scope": "scored_population",
+    "review_kind": "agent_provisional",
+    "document_ids": ["openalex-snippet:b2a1acc83132ac6f7d2e81568fee0c19e09cbdb9214079b3a44b708c9673d81f"]
+  }
+]

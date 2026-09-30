@@ -1,0 +1,158 @@
+{
+  "attribution": [
+    {
+      "path": "annotations/scibert-v2/ecosystems-expansion-001/attribution.corrected-001.jsonl",
+      "sha256": "6f1872b89e0b659cd2ab23ed2e86d8e985df3bff4d4fcdf8bab65aac06fc046b"
+    },
+    {
+      "path": "annotations/scibert-v2/ecosystems-expansion-001/attribution-correction.json",
+      "sha256": "d0a789d8faedd3bdd05116fb9e39d7df660d0293d1a089a913788a94a83bae8e"
+    }
+  ],
+  "companions": [
+    {
+      "path": "annotations/scibert-v2/ecosystems-pilot-002/reviews/krushi-chat-2026-09-25/manifest.json",
+      "sha256": "be1c7565a37bb8a5fd8e2714eafbc93f6a86a0a681a9c24510cae54631bde1a3"
+    },
+    {
+      "path": "annotations/scibert-v2/icekat-alias-001/reviews/krushi-chat-2026-09-25/manifest.json",
+      "sha256": "aacd31dd0405527b6f3f97a08064cf57ecd3c6762f2f96fb73c83d1287fdb247"
+    },
+    {
+      "path": "/Users/krushi/work/openalex-sw-mentions/annotations/scibert-v2/supplemental-001/import-001/manifest.json",
+      "sha256": "49a445774dd00f19c0cbf26ef2525a7412365b0349fd61b800443a574c0ac3fc"
+    },
+    {
+      "path": "/Users/krushi/work/openalex-sw-mentions/annotations/scibert-v2/supplemental-001/execution/manifest.json",
+      "sha256": "9570f33d57205afc401c7938adb9f2bdbe2235aa7c7222efc201417e51a6bf62"
+    },
+    {
+      "path": "data/scibert-v2/full-label-discovery-001/manifest.json",
+      "sha256": "76894998b26b286c62911958fd506add69b02cb215fadf58b63fbc499e4ec920"
+    },
+    {
+      "path": "annotations/scibert-v2/full-label-topup-001/import-001/manifest.json",
+      "sha256": "f462df9d8a2080f503d9e3e25f3bba03f4a09f8edeeecfae1c453a798e6cd4bc"
+    },
+    {
+      "path": "annotations/scibert-v2/full-label-topup-001/execution/manifest.json",
+      "sha256": "fdf8d4c6e66f8307fbf8e4a3f93a2128ff1a0b514a656bf5b888c8cb7dbd6a4a"
+    },
+    {
+      "path": "annotations/scibert-v2/full-label-topup-002/import-001/manifest.json",
+      "sha256": "795d7ea74e38aaffe954e02a46b8f927df083c698e3ec9b15d4cbce1e79f4f12"
+    },
+    {
+      "path": "annotations/scibert-v2/full-label-topup-002/execution/manifest.json",
+      "sha256": "1ec77e9bf9f260a8837d341906e3be327cc58f58bf5c0dd81ce6d606b3ad2473"
+    },
+    {
+      "path": "annotations/scibert-v2/linker-topup-001/import-001/manifest.json",
+      "sha256": "654ee8d902cdabea1d6d58d7420d3ffd3cc0dc2229bdcf4a282401aee8c1d758"
+    },
+    {
+      "path": "annotations/scibert-v2/linker-topup-001/execution/manifest.json",
+      "sha256": "fd4f8075b2304ed49404773a1e93a244349dabaaf1baa5839a50e25f9b4efa7c"
+    },
+    {
+      "path": "annotations/scibert-v2/focused-topup-002/import-002/manifest.json",
+      "sha256": "dfd63368f8d5a5f233ebcbe355276bcf6964c2afd9411a28892e08bbbb23d5b6"
+    },
+    {
+      "path": "annotations/scibert-v2/focused-topup-002/execution-002/manifest.json",
+      "sha256": "7ea604d052ff970b3cf5a628280b10d39b818fbf89f8479b426a0ea867553203"
+    },
+    {
+      "path": "annotations/scibert-v2/focused-topup-003/import-001/manifest.json",
+      "sha256": "e06118fcb8629961578e58de70a8b577b95fb96d421ea7e733a62285bc36e26d"
+    },
+    {
+      "path": "annotations/scibert-v2/focused-topup-003/execution-001/manifest.json",
+      "sha256": "aa5aafdbf788dc73401737acf94536f39df3fc8a1e8e6d49f6b98615f8ca5341"
+    }
+  ],
+  "exclusions": [
+    {
+      "path": "data/scibert-v2/corpus-001/documents.jsonl",
+      "sha256": "9d2613f7845672b8976493c09ee7bce6040faaa1d7fd223976e338aa7d09553b"
+    },
+    {
+      "path": "inputs/sofair/sofair_docs.jsonl",
+      "sha256": "31927ea0ed0014007bb858a91b09ac8a97053127d5b37d48db96d22fe4c3c597"
+    },
+    {
+      "path": "inputs/somesci/somesci_docs.jsonl",
+      "sha256": "f15d3306be29a692f0358e34fecf8c6f6826acbb89cb1ab8e77143e2c39bd77f"
+    }
+  ],
+  "expected_summary": {
+    "agent_provisional_passages": 150,
+    "documents": 21,
+    "human_reviewed_passages": 11,
+    "passages": 161,
+    "software_spans": 164,
+    "version_spans": 47
+  },
+  "exposure_bundles": [
+    {
+      "path": "data/scibert-v2/exposures-007/manifest.json",
+      "sha256": "4d2c53ae62e3bf2595543ce350089d4a907f4cec02a740d235ae341213e0fc67"
+    }
+  ],
+  "parents": [
+    {
+      "path": "data/scibert-v2/ecosystems-pilot-002/bundle/manifest.json",
+      "sha256": "205845b0131c16f05c9c3b63327ee07260cb658bc1f12d4b49e070184ac3fe30"
+    },
+    {
+      "path": "data/scibert-v2/ecosystems-expansion-001/bundle/manifest.json",
+      "sha256": "7c400bd82d59a8f091e6534a40bed0265cd80fc65ec235096e56a967873ff9f6"
+    },
+    {
+      "path": "/Users/krushi/work/openalex-sw-mentions/data/scibert-v2/supplemental-001/bundle/manifest.json",
+      "sha256": "01bd0dd99db1e18ce0b4ab64718e915f150e25e45e7b7a2f0ac422d1dca58240"
+    },
+    {
+      "path": "data/scibert-v2/full-label-discovery-001/candidate-1/bundle/manifest.json",
+      "sha256": "c9fdc32f81d374ba885f94bb69b06570be8e59c66701a93f550ccae0d5ef2673"
+    }
+  ],
+  "snapshots": [
+    {
+      "path": "annotations/scibert-v2/ecosystems-pilot-002/exports/krushi-reviewed-001/manifest.json",
+      "sha256": "cc185fa7e32badd5a30f7ed71cdd8b8854bb117e769e9caff0ca67e768999fcb"
+    },
+    {
+      "path": "annotations/scibert-v2/icekat-alias-001/exports/krushi-reviewed-001/manifest.json",
+      "sha256": "2e255553e3672f5b9edc7fa36826b4f663a4205ce68c587d3f5d6fbcc50e9f85"
+    },
+    {
+      "path": "annotations/scibert-v2/ecosystems-expansion-001/exports/provisional-001/manifest.json",
+      "sha256": "895be8e5d3c78bc5af9f17b0ad1d65aaadc3b44914d1fa9f82c905f702979048"
+    },
+    {
+      "path": "/Users/krushi/work/openalex-sw-mentions/annotations/scibert-v2/supplemental-001/exports/provisional-001/manifest.json",
+      "sha256": "877ab3b1c320c9e0822555440f3439b705c482484887cf5bd08f0c8422aefdbd"
+    },
+    {
+      "path": "annotations/scibert-v2/full-label-topup-001/exports/provisional-001/manifest.json",
+      "sha256": "d9c855dbc8365aeabe53accf48a87eb8879e211e5bc37e588dc33bd524281858"
+    },
+    {
+      "path": "annotations/scibert-v2/full-label-topup-002/exports/provisional-001/manifest.json",
+      "sha256": "aca8fa8169d68bd4f764148dc82f403bc9ae5e9981ce5e52ff5b626d38268785"
+    },
+    {
+      "path": "annotations/scibert-v2/linker-topup-001/exports/provisional-001/manifest.json",
+      "sha256": "e7fcb5b662b4cebad8d506222a1daae1367c7286849963cf025ad616f8b004d7"
+    },
+    {
+      "path": "annotations/scibert-v2/focused-topup-002/exports/provisional-002/manifest.json",
+      "sha256": "fc0c823c3a9b0713ccd4334d8f80a4e14aaa48cb08c9601e4bc0dbc098264e6a"
+    },
+    {
+      "path": "annotations/scibert-v2/focused-topup-003/exports/provisional-001/manifest.json",
+      "sha256": "cd549af4ebcd5698d74ac6c0e3d64fd383ec38cd506179f4ff6dfcfe7859de68"
+    }
+  ]
+}
