@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import sys
 
+from ..contracts import validate_document
 from ..data.manifest import read_jsonl
 from .cli import read_stdin_document, write_predictions
 from .json_output import render_prediction, terminal_colors
@@ -66,9 +67,15 @@ def cmd_predict(args):
         documents = read_jsonl(Path(args.input)) if args.input else [{'document_id': args.document_id, 'text': args.text}]
     if not documents or len({document.get('document_id') for document in documents}) != len(documents):
         raise ValueError('nonempty input with unique document IDs required')
+    documents = [validate_document(document) for document in documents]
     with redirect_stdout(sys.stderr):
         pipeline = FullLabelPipeline(Path(args.model), args.device)
-        results = [pipeline.predict(document) for document in documents]
+        results = []
+        for document in documents:
+            try:
+                results.append(pipeline.predict(document))
+            except Exception as exc:
+                results.append(pipeline.failure_result(document, exc))
     if args.output:
         write_predictions(Path(args.output), results)
         print(json.dumps({'output': args.output, 'documents': len(results)}))

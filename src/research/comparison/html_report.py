@@ -241,7 +241,11 @@ def _timing_evidence(paths, documents, models, natives, configurations, frozen):
                       'load_seconds': arm.get('load_seconds'), 'load_semantics': arm.get('load_semantics'),
                       'load_status': arm.get('load_status'), 'summary': arm['summary'],
                       'policy': manifest['timing_policy']}
-            model['timing'] = [*(model.get('timing') or [])] + [joined]
+            previous = model.get('timing')
+            if isinstance(previous, dict):
+                model['legacy_timing'] = previous
+                previous = []
+            model['timing'] = [*(previous or []), joined]
             rows_out.append(joined)
         frozen[f'timing-{index}/manifest.json'] = manifest_bytes
         frozen.update({f'timing-{index}/{name}': payload for name, payload in files.items()})

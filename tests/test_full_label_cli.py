@@ -34,6 +34,70 @@ def test_cli_strict_stdin(monkeypatch):
         main(['full-label', 'predict', '--model', 'model', '--stdin'])
 
 
+def test_cli_batch_preserves_other_documents_when_middle_prediction_fails(monkeypatch, tmp_path):
+    from research.cli import main
+    from research.contracts import ContractError
+    from research.training import full_label
+
+    class Pipeline:
+        def __init__(self, *args):
+            pass
+
+        def predict(self, document):
+            if document['document_id'] == 'middle':
+                raise ContractError(document, 'version_links.text', 'invalid version text')
+            return {'document_id': document['document_id'], 'status': 'success', 'text': document['text']}
+
+        def failure_result(self, document, error):
+            return {'document_id': document['document_id'], 'status': 'failure',
+                    'reason': error.issues[0]['field']}
+
+    monkeypatch.setattr(full_label, 'FullLabelPipeline', Pipeline)
+    source = tmp_path / 'inputs.jsonl'
+    source.write_text(''.join(json.dumps({'document_id': name, 'text': name}) + '\n'
+                              for name in ('first', 'middle', 'last')))
+    output = tmp_path / 'results.jsonl'
+
+    command = ['full-label', 'predict', '--model', 'model', '--input', str(source), '--output', str(output)]
+    assert main(command) == 1
+    rows = [json.loads(line) for line in output.read_text().splitlines()]
+    assert rows == [
+        {'document_id': 'first', 'status': 'success', 'text': 'first'},
+        {'document_id': 'middle', 'status': 'failure', 'reason': 'version_links.text'},
+        {'document_id': 'last', 'status': 'success', 'text': 'last'},
+    ]
+    before = output.read_bytes()
+    with pytest.raises(FileExistsError):
+        main(command)
+    assert output.read_bytes() == before
+
+
+def test_cli_batch_rejects_malformed_document_before_inference(monkeypatch, tmp_path):
+    from research.cli import main
+    from research.contracts import ContractError
+    from research.training import full_label
+
+    class Pipeline:
+        def __init__(self, *args):
+            pass
+
+        def predict(self, document):
+            return {'document_id': document['document_id'], 'status': 'success'}
+
+    monkeypatch.setattr(full_label, 'FullLabelPipeline', Pipeline)
+    source = tmp_path / 'inputs.jsonl'
+    source.write_text(''.join(json.dumps(document) + '\n' for document in (
+        {'document_id': 'first', 'text': 'first'},
+        {'document_id': 'middle', 'text': '   '},
+        {'document_id': 'last', 'text': 'last'},
+    )))
+    output = tmp_path / 'results.jsonl'
+
+    with pytest.raises(ContractError, match='text: requires a nonblank string'):
+        main(['full-label', 'predict', '--model', 'model', '--input', str(source), '--output', str(output)])
+    assert not output.exists()
+
+
 def test_interactive_loads_once_two_multiline_submissions_and_recovers():
     from research.training.full_label_cli import run_full_label_interactive
     from research.training import interactive

@@ -7,7 +7,8 @@ import pytest
 from research.contracts import occurrence_id, validate_document
 
 
-def _timing_dir(tmp_path, native, *, checkpoint=None, text='same', config_hash=None, softcite=False):
+def _timing_dir(tmp_path, native, *, checkpoint=None, text='same', config_hash=None,
+                softcite=False, name='timing', device='cpu'):
     from research.comparison.pipeline_timing import _summary
 
     document = validate_document({'document_id': 'd', 'text': 'We used Alpha.'})
@@ -16,7 +17,7 @@ def _timing_dir(tmp_path, native, *, checkpoint=None, text='same', config_hash=N
     checkpoint = checkpoint or 'b' * 64
     config = b'{}'
     config_hash = config_hash or hashlib.sha256(config).hexdigest()
-    timing = tmp_path / 'timing'
+    timing = tmp_path / name
     timing.mkdir()
     timing_arm = 'softcite' if softcite else 'different-timing-name'
     rows = [{'arm_id': timing_arm, 'repeat': 1, 'document_id': document['document_id'],
@@ -34,7 +35,7 @@ def _timing_dir(tmp_path, native, *, checkpoint=None, text='same', config_hash=N
                 'batch_size': 1, 'order': [document['document_id']], 'document_count': 1,
                 'input_file_sha256': hashlib.sha256(files['inputs.jsonl']).hexdigest(),
                 'softcite_config_sha256': config_hash,
-                'hardware': {'device': 'cpu', 'machine': 'arm64'},
+                'hardware': {'device': device, 'machine': 'arm64'},
                 'timing_policy': 'full document predict; load and warmup excluded',
                 'arms': [{'arm_id': timing_arm,
                           'checkpoint_manifest_sha256': None if softcite else checkpoint,
@@ -310,3 +311,54 @@ def test_source_only_wording_requires_explicit_flags_on_every_reference():
     source_only = {'provenance': {'source_only': True, 'prediction_exposed': False}}
     assert 'source-only fresh diagnostic sample' in _reference_limit([source_only, source_only]).lower()
     assert 'Development diagnostic' in _reference_limit([source_only, {'provenance': {}}])
+
+
+def test_html_report_keeps_legacy_timing_separate_from_two_full_pipeline_receipts(tmp_path):
+    from research.comparison.backends import capabilities, window_result
+    from research.comparison.html_report import build_html_report
+    from research.comparison.link_report import build_link_report
+    from research.comparison.report import build_report
+    from research.comparison.runner import run_comparison
+
+    doc = validate_document({'document_id': 'd', 'text': 'We used Alpha.'})
+    window = {**doc, 'window_id': 'w', 'window_text_revision': doc['text_revision'],
+              'start': 0, 'end': len(doc['text']), 'content_tokens': 4}
+
+    class Backend:
+        def load(self, arm):
+            return {'status': 'ready', 'reason': None, 'capabilities': capabilities(),
+                    'identity': {'config_sha256': arm['config_source']['sha256'],
+                                 'verified': True, 'offset_unit': 'codepoint'}}
+
+        def predict(self, source):
+            return window_result(source, raw={'native': {'mentions': []}})
+
+        def close(self):
+            pass
+
+    run = tmp_path / 'run'
+    run_manifest = run_comparison([doc], [window],
+                                  [{'arm_id': 'softcite-0.8.1', 'backend': 'softcite', 'config': {}}],
+                                  run, adapter_factory=lambda arm: Backend())
+    reference = {**doc, 'spans': [], 'version_links': [], 'ignored_versions': [], 'ignored_software': [],
+                 'coverage': [{'start': 0, 'end': len(doc['text']), 'label': label,
+                               'complete': True, 'review_kind': 'agent_provisional'}
+                              for label in ('SOFTWARE', 'VERSION')],
+                 'link_coverage': [{'start': 0, 'end': len(doc['text']), 'complete': True,
+                                    'review_kind': 'agent_provisional'}],
+                 'provenance': {'review_kind': 'agent_provisional'}}
+    reference_path = tmp_path / 'references.jsonl'
+    reference_path.write_text(json.dumps(reference) + '\n')
+    build_report(run, tmp_path / 'spans', references=reference_path)
+    build_link_report(run, reference_path, [], tmp_path / 'links')
+    native = {'window_id': 'd', 'status': 'success'}
+    mps = _timing_dir(tmp_path, native, softcite=True, name='mps-timing', device='mps')
+    cpu = _timing_dir(tmp_path, native, softcite=True, name='cpu-timing', device='cpu')
+    data = build_html_report(run, tmp_path / 'spans', [tmp_path / 'links'], tmp_path / 'html',
+                             timing=[mps, cpu])
+    model = next(row for row in data['models'] if row['arm_id'] == 'softcite-0.8.1')
+    assert [row['device'] for row in model['timing']] == ['mps', 'cpu']
+    assert model['timing'] == data['timing_rows']
+    assert model['legacy_timing'] == run_manifest['arms'][0]['timing']
+    published = json.loads((tmp_path / 'html/report.json').read_text())
+    assert [row['device'] for row in published['models'][0]['timing']] == ['mps', 'cpu']
