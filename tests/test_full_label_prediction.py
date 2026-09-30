@@ -200,6 +200,40 @@ def test_partial_pair_failure_keeps_successful_rows_and_diagnostics(pipeline_fac
     assert result['pair_predictions']['linker'][-1]['scores']['linked'] > .5
 
 
+@pytest.mark.parametrize('invalid', ['NA', 'N/A', 'none', 'null', 'na'])
+def test_invalid_version_candidate_preserves_other_fields_and_occurrences(pipeline_factory, invalid):
+    from research.training.full_label import validate_full_label_prediction
+
+    pipeline, document = pipeline_factory(
+        f'We used NumPy {invalid}.\n\nWe used ToolX 2.26.',
+        ('NumPy', 'ToolX'), (invalid, '2.26'), values={'linker': [[5]]})
+    result = pipeline.predict(document)
+    assert result['status'] == 'partial'
+    assert result['stage_status']['detector']['status'] == 'success'
+    assert result['stage_status']['linker']['status'] == 'partial'
+    first, second = result['field_predictions']
+    assert first['versions']['status'] == 'partial'
+    assert first['versions']['value'] is None
+    assert all(first[field]['status'] == 'success' for field in ('software', 'intents', 'sentiment'))
+    assert second['versions']['value'][0]['text'] == '2.26'
+    assert [(row['name'], row['version']) for row in result['public_rows']] == [('ToolX', '2.26')]
+    assert any(span['label'] == 'VERSION' and span['text'] == invalid
+               for span in result['detector_diagnostics']['spans'])
+    rejected = [pair for pair in result['pair_predictions']['linker'] if pair['status'] == 'failed']
+    assert len(rejected) == 1 and rejected[0]['scores'] is None and rejected[0]['label'] is None
+    assert 'invalid_version_candidate' in ' '.join(rejected[0]['reasons'])
+    validate_full_label_prediction(result, document)
+
+
+@pytest.mark.parametrize('version', ['beta', '2024a', 'NA1'])
+def test_nonnumeric_version_candidate_is_not_rejected_as_a_placeholder(pipeline_factory, version):
+    pipeline, document = pipeline_factory(
+        f'We used ToolX {version}.', ('ToolX',), (version,), values={'linker': [[5]]})
+    result = pipeline.predict(document)
+    assert result['status'] == 'success'
+    assert result['public_rows'][0]['version'] == version
+
+
 def test_low_confidence_keeps_chosen_labels_and_reviews_canonical_occurrence(pipeline_factory):
     pipeline, document = pipeline_factory(values={'intent': [[0, -1, -1]], 'sentiment': [[0, 0, 0, .1]],
                                                   'linker': [[0], [-1], [-1], [0]]})

@@ -86,6 +86,53 @@ def test_boundary_crossing_and_uncovered_spans_are_counted_and_excluded():
                                     "prediction_boundary_crossing": 1, "prediction_uncovered": 1}
 
 
+@pytest.mark.parametrize("regions", [((0, 2), (2, 5)), ((0, 3), (2, 5))])
+def test_same_kind_software_coverage_union_scores_prediction_across_region_boundary(regions):
+    doc = document(text="Alpha Beta")
+    predicted = span(doc, "SOFTWARE", 0, 5)
+    reviewed = [coverage(doc, "SOFTWARE", start=start, end=end) for start, end in regions]
+    report = score([doc], [result(doc, [predicted])], [reference(doc, regions=reviewed)])
+    label = report["arms"]["a"]["labels"]["SOFTWARE"]
+    assert label["operational"]["fp"] == 1
+    assert label["exclusions"]["prediction_boundary_crossing"] == 0
+    assert label["coverage"]["covered_codepoints"] == 5
+
+
+def test_software_prediction_crossing_unknown_coverage_gap_remains_excluded():
+    doc = document(text="Alpha Beta")
+    predicted = span(doc, "SOFTWARE", 0, 5)
+    reviewed = [coverage(doc, "SOFTWARE", start=0, end=2),
+                coverage(doc, "SOFTWARE", start=3, end=5)]
+    report = score([doc], [result(doc, [predicted])], [reference(doc, regions=reviewed)])
+    label = report["arms"]["a"]["labels"]["SOFTWARE"]
+    assert label["operational"]["fp"] == 0
+    assert label["exclusions"]["prediction_boundary_crossing"] == 1
+    assert label["coverage"]["covered_codepoints"] == 4
+
+
+def test_software_prediction_does_not_cross_into_version_coverage():
+    doc = document(text="Alpha Beta")
+    predicted = span(doc, "SOFTWARE", 0, 5)
+    reviewed = [coverage(doc, "SOFTWARE", start=0, end=2),
+                coverage(doc, "VERSION", start=2, end=5)]
+    report = score([doc], [result(doc, [predicted])], [reference(doc, regions=reviewed)])
+    label = report["arms"]["a"]["labels"]["SOFTWARE"]
+    assert label["operational"]["fp"] == 0
+    assert label["exclusions"]["prediction_boundary_crossing"] == 1
+
+
+@pytest.mark.parametrize("kind", ["human_reviewed", "agent_provisional"])
+def test_software_prediction_crossing_review_kind_boundary_remains_excluded(kind):
+    doc = document(text="Alpha Beta")
+    predicted = span(doc, "SOFTWARE", 0, 5)
+    reviewed = [coverage(doc, "SOFTWARE", start=0, end=2),
+                coverage(doc, "SOFTWARE", start=2, end=5, kind="agent_provisional")]
+    report = score([doc], [result(doc, [predicted])], [reference(doc, regions=reviewed)], kind)
+    label = report["arms"]["a"]["labels"]["SOFTWARE"]
+    assert label["operational"]["fp"] == 0
+    assert label["exclusions"]["prediction_boundary_crossing"] == 1
+
+
 def test_duplicate_gold_and_coverage_do_not_inflate_counts():
     doc = document()
     gold = span(doc, "SOFTWARE", 0, 5)
@@ -293,14 +340,15 @@ def test_invalid_document_output_is_an_operational_miss(bad):
     assert label["operational"] == {"tp": 0, "fp": 0, "fn": 1, "precision": None, "recall": 0., "f1": 0.}
 
 
-def test_adjacent_complete_regions_do_not_silently_admit_crossing_span():
+def test_adjacent_complete_regions_admit_crossing_gold_span():
     doc = document()
     gold = span(doc, "SOFTWARE", 0, 5)
     ref = reference(doc, [gold], [coverage(doc, "SOFTWARE", end=3),
                                 coverage(doc, "SOFTWARE", start=3, end=7)])
     label = score([doc], [result(doc, [gold])], [ref])["arms"]["a"]["labels"]["SOFTWARE"]
-    assert label["operational"]["tp"] == 0
-    assert label["exclusions"]["gold_boundary_crossing"] == 1
+    assert label["operational"]["tp"] == 1
+    assert label["coverage"]["eligible_gold_spans"] == 1
+    assert label["exclusions"]["gold_boundary_crossing"] == 0
 
 
 def test_agreement_label_denominator_requires_both_arm_capabilities():

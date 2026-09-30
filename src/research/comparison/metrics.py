@@ -105,6 +105,16 @@ def _region_state(span, regions):
     return "boundary_crossing" if any(lo < end and start < hi for lo, hi in regions) else "uncovered"
 
 
+def _union_regions(regions):
+    merged = []
+    for lo, hi in sorted(regions):
+        if merged and lo <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(hi, merged[-1][1]))
+        else:
+            merged.append((lo, hi))
+    return merged
+
+
 def _covered_size(regions):
     total = end = 0
     for lo, hi in sorted(regions):
@@ -160,7 +170,7 @@ def _label_score(indexed, arm, refs, label, kind):
     details = {}
     for ident in indexed:
         ref, row = refs[ident], arm["rows"][ident]
-        regions = ref["regions"][kind][label]
+        regions = _union_regions(ref["regions"][kind][label])
         gold, candidates = set(), set()
         for (span_label, start, end), kinds in ref["spans"].items():
             if span_label != label:

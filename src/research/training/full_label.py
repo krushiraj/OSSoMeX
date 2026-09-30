@@ -120,6 +120,10 @@ class FullLabelPipeline:
                 'evidence_method': 'model_input_context', 'checkpoint_sha256': checkpoint.identity,
                 'status': 'success', 'scores': None, 'label': None, 'reasons': []}
             try:
+                if stage == 'linker':
+                    version = document['text'][row['second_span']['start']:row['second_span']['end']]
+                    if not version.strip() or version.strip().lower() in ('null', 'na', 'n/a', 'none'):
+                        raise ValueError('invalid_version_candidate')
                 with torch.inference_mode():
                     batch = batch_attribute_features([row], checkpoint.tokenizer.pad_token_id, checkpoint.device)
                     logits = checkpoint.model(**batch).logits
