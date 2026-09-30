@@ -24,6 +24,8 @@ node_modules/
 /artifacts/
 /evaluation_private/
 /deliverables/
+/output/
+/tmp/
 annotations/*
 !annotations/annotation_policy.md
 !annotations/scibert-v2/
