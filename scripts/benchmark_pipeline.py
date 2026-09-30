@@ -17,7 +17,7 @@ def bounded_repeats(value):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--input', type=Path, required=True, help='Frozen document JSONL')
-    parser.add_argument('--checkpoint', action='append', required=True, metavar='NAME=PATH',
+    parser.add_argument('--checkpoint', action='append', default=[], metavar='NAME=PATH',
                         help='Named full-label checkpoint; may be repeated')
     parser.add_argument('--softcite-config', type=Path, required=True)
     parser.add_argument('--device', choices=('cpu', 'mps'), required=True)

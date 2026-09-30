@@ -105,8 +105,8 @@ def run_benchmark(input_path, checkpoints, softcite_config, output, *, device, r
         raise ValueError('repeats must be between 1 and 20')
     if batch_size != 1:
         raise ValueError('full-pipeline comparison requires batch size 1')
-    if not isinstance(checkpoints, dict) or not checkpoints or len(checkpoints) > 8:
-        raise ValueError('one to eight named checkpoints required')
+    if not isinstance(checkpoints, dict) or len(checkpoints) > 8:
+        raise ValueError('zero to eight named checkpoints required')
     if any(not isinstance(name, str) or not name.strip() or name == 'softcite' for name in checkpoints):
         raise ValueError('checkpoint names must be nonblank and distinct from softcite')
     output = Path(output)

@@ -1,0 +1,32 @@
+{
+  "backend_id": "softcite/software-mentions:0.8.1-scibert",
+  "image_digest": "grobid/software-mentions@sha256:f03e4f842c651ebd30b917da8c2e44cd4dbb24255a6ab5257ed9dd1da5fe40ff",
+  "image_architecture": "amd64",
+  "image_os": "linux",
+  "host_architecture": "arm64",
+  "container_id": "302e51164c03e17ce3283663694c4863451603bfac0c2e42895afd381bfe493b",
+  "model_selection": {
+    "software": "delft_BERT_SciBERT",
+    "software_type": "wapiti",
+    "context": "binary_LinkBERT_classifiers"
+  },
+  "weight_sha256": "9ea5e50e4d778c464a75f6bab2901107c5f50dbb16d62249efb4994390183a4d",
+  "weights": [
+    {"path": "/opt/grobid/grobid-home/models/software-BERT/model_weights.hdf5", "sha256": "9ea5e50e4d778c464a75f6bab2901107c5f50dbb16d62249efb4994390183a4d"},
+    {"path": "/opt/grobid/grobid-home/models/software-BERT/config.json", "sha256": "fd4f0c45ff4ab46fab10bb6cbf7f8bb4b59d639a4bc40b66def92c7b68770bea"},
+    {"path": "/opt/grobid/grobid-home/models/software-BERT/preprocessor.json", "sha256": "b579a6995dc2000c6de4d0cb4fd86a114d471b6185c68f868508735dc46933cd"},
+    {"path": "/opt/grobid/grobid-home/models/software-BERT/transformer-config.json", "sha256": "af42abaf3852d3fa5c22d4a99b20d02a76ea1e960216f0621a55d52dcc4e79ea"},
+    {"path": "/opt/grobid/grobid-home/models/software-type/model.wapiti", "sha256": "7fa75ad6c5c32f5911f27b8635381c5d7b15cdf07cd2ebfdd087e09cb5526db8"},
+    {"path": "/opt/grobid/grobid-home/models/context_used_bert/model_weights.hdf5", "sha256": "95ea068e2ab8ed28b22c984e32ac8ad0f8b6105c100d00ef9cad8b4dffb1be75"},
+    {"path": "/opt/grobid/grobid-home/models/context_creation_bert/model_weights.hdf5", "sha256": "82c65aa8020380c2ac32b144e3a803549b9343370b3cb458f4a1c494f26dc2a4"},
+    {"path": "/opt/grobid/grobid-home/models/context_shared_bert/model_weights.hdf5", "sha256": "7844fdf560ac0ad413503940457d2a5b9ea6069eca3e1a04ced69fca58f03c47"},
+    {"path": "/opt/grobid/software-mentions/resources/config/config.yml", "sha256": "a3368b72f5c7d661ce5790dedf2a137b44151a68c19ca02832064b19b14bf2db"}
+  ],
+  "method": "read_only_docker_image_inspect_exec_sha256sum_and_loaded_engine_logs",
+  "evidence": "BERT\nallenai/scibert_scivocab_cased will be used, loaded via delft_model\nload weights from /opt/grobid/software-mentions/../grobid-home/models/software-BERT/model_weights.hdf5\nloading model weights /opt/grobid/software-mentions/../grobid-home/models/software-BERT/model_weights.hdf5\n[Wapiti] Loading model: /opt/grobid/software-mentions/../grobid-home/models/software-type/model.wapiti\nINFO org.grobid.core.jni.DeLFTModel: Loading DeLFT model for software with architecture BERT...",
+  "limitations": [
+    "The 0.8.1 image bundles configuration declaring version 0.8.0.",
+    "A separate amd64 Linux container runs on an arm64 Apple host; timing is deployment-specific.",
+    "The service adds Wapiti software-type and binary LinkBERT context classifiers after SciBERT extraction."
+  ]
+}

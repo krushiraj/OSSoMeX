@@ -1,0 +1,16 @@
+{
+  "endpoint": "http://localhost:8062/service/processSoftwareText",
+  "health_endpoint": "http://localhost:8062/service/isalive",
+  "timeout_seconds": 180,
+  "health_timeout_seconds": 10,
+  "model_id": "softcite/software-mentions:0.8.1-scibert",
+  "model_notes": "Isolated installed Softcite 0.8.1 image, SciBERT DeLFT software extraction, Wapiti software-type, binary LinkBERT context. Linux amd64 Docker on arm64 host.",
+  "offset_contract": {
+    "path": "configs/scibert/softcite-scibert-offset-contract-001.json",
+    "sha256": "4aa1b985600c7d0ff1fda879893aec6d5a510a953094ac8cdb5f15828eff1462"
+  },
+  "local_metadata": {
+    "path": "configs/scibert/softcite-scibert-local-metadata-001.json",
+    "sha256": "6e2563533bede8bef74e7f7d6b43ad6c335c37c1084256d15ae531187bf7c7d0"
+  }
+}

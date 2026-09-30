@@ -219,6 +219,30 @@ def test_seeded_order_is_shared_and_request_exceptions_are_counted(tmp_path):
             assert [row['document_id'] for row in rows if row['arm_id'] == arm_id and row['repeat'] == repeat] == expected
 
 
+def test_softcite_only_uses_same_warmed_batch_one_schedule(tmp_path):
+    source = tmp_path / 'input.jsonl'
+    source.write_text(json.dumps({'document_id': 'a', 'text': 'We used NumPy.'}) + '\n')
+    config = tmp_path / 'softcite.json'
+    config.write_text('{}')
+
+    class Soft:
+        def load(self, arm):
+            return {'status': 'ready', 'reason': None, 'capabilities': {}, 'identity': {}}
+
+        def predict(self, window):
+            return {'window_id': window['window_id'], 'status': 'success'}
+
+        def close(self):
+            pass
+
+    manifest = run_benchmark(source, {}, config, tmp_path / 'run', device='cpu', repeats=3,
+                             soft_factory=Soft, synchronize=lambda device: None)
+    assert [arm['arm_id'] for arm in manifest['arms']] == ['softcite']
+    assert manifest['arms'][0]['warmup_status'] == 'success'
+    assert manifest['arms'][0]['summary']['scheduled'] == 3
+    assert manifest['arms'][0]['summary']['successful'] == 3
+
+
 def test_cli_requires_device_and_bounded_repeats(tmp_path):
     script = Path(__file__).resolve().parents[1] / 'scripts' / 'benchmark_pipeline.py'
     command = [sys.executable, str(script), '--input', str(tmp_path / 'input.jsonl'),
