@@ -1,16 +1,12 @@
 """Build the review-only HTML/PDF brief from frozen cycle 003 evidence."""
 
 from html import escape
+from copy import deepcopy
 import hashlib
 import json
 from pathlib import Path
+import re
 
-from pypdf import PdfReader
-from reportlab.lib import colors
-from reportlab.lib.enums import TA_LEFT
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import ParagraphStyle
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, KeepTogether
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'deliverables/openalex-progress-2026-09-30'
@@ -19,6 +15,109 @@ REPORT = ROOT / 'reports/scibert-v2/focused-cycle-003/fresh30/dashboard-reviewed
 HASH = '1ff19fe04e56c8b9208865f91b2c15e9e3e50b29d724b8f166b377a824e6aa10'
 CONTROL = ROOT / 'reports/scibert-v2/focused-cycle-003/corrected-reserve27-spans/report.json'
 CONTROL_HASH = '068531888da8d0b96d6d572bb6031789620556ffd94b382d3132b184c553bbb8'
+SCIBERT_REPORT = ROOT / 'reports/scibert-v2/softcite-scibert-001/dashboard/report.json'
+SCIBERT_HASH = '40932ebe4678bc795f52faece25feb3f7ceff1ae89d82afb125611558dccdda9'
+ENGINE_METADATA = ROOT / 'configs/scibert/softcite-scibert-local-metadata-001.json'
+ENGINE_HASH = '6e2563533bede8bef74e7f7d6b43ad6c335c37c1084256d15ae531187bf7c7d0'
+PROJECTION = ROOT / 'reports/scibert-v2/softcite-scibert-001/schema-projection-001.json'
+PROJECTION_HASH = '8af5e5da5ad83c2fff29ef1eccbaed0fdf1d27aad99f1346fd21f12b9f1cc019'
+SENSITIVITY = ROOT / 'reports/scibert-v2/softcite-scibert-001/schema-projection-002.json'
+SENSITIVITY_HASH = '1d0526670fda31d44b96e5039c745cf955b4392a3ead36252d4fc1066939a448'
+SCIBERT_ARM = 'softcite-scibert-0.8.1'
+ARMS = [('full-label-006', 'OSSoMeX'), ('softcite-0.8.1', 'Softcite (CRF)'),
+        (SCIBERT_ARM, 'Softcite (SciBERT)')]
+
+
+def merge_comparison(original, extra, arm_id):
+    reference_hash = original['provenance'].get('reference_sha256')
+    if not reference_hash or reference_hash != extra['provenance'].get('reference_sha256'):
+        raise ValueError('Comparison must use the same frozen references.')
+
+    def indexed(documents):
+        result = {doc['document_id']: doc for doc in documents}
+        if len(result) != len(documents):
+            raise ValueError('Duplicate document in comparison.')
+        return result
+
+    original_docs = indexed(original['documents'])
+    extra_docs = indexed(extra['documents'])
+    if original_docs.keys() != extra_docs.keys():
+        raise ValueError('Comparison populations differ.')
+    if arm_id in original['field_scores']:
+        raise ValueError('Cannot replace a frozen comparison arm.')
+    models = [model for model in extra['models'] if model['arm_id'] == arm_id]
+    if len(models) != 1 or arm_id not in extra['field_scores']:
+        raise ValueError('Comparison arm metadata or scores missing.')
+    result = deepcopy(original)
+    for doc in result['documents']:
+        other = extra_docs[doc['document_id']]
+        if any(doc[key] != other[key] for key in ('text', 'text_revision')):
+            raise ValueError('Comparison input text differs.')
+        for key in ('reference_spans', 'reference_links', 'coverage', 'link_coverage',
+                    'ignored_software', 'ignored_versions'):
+            if doc.get(key) != other.get(key):
+                raise ValueError('Comparison embedded reference or coverage differs.')
+        arms = [arm for arm in other['arms'] if arm['arm_id'] == arm_id]
+        if len(arms) != 1 or any(arm['arm_id'] == arm_id for arm in doc['arms']):
+            raise ValueError('Missing or duplicate document arm.')
+        doc['arms'].append(deepcopy(arms[0]))
+    result['models'].append(deepcopy(models[0]))
+    result['field_scores'][arm_id] = deepcopy(extra['field_scores'][arm_id])
+    result['timing_rows'].extend(deepcopy([
+        row for row in extra['timing_rows'] if row['arm_id'] == arm_id
+    ]))
+    return result
+
+
+def clean_name_difference(reference_spans, arms):
+    def names(spans):
+        return {(span['start'], span['end'], span['text']) for span in spans
+                if span['label'] == 'SOFTWARE'}
+
+    if not arms or any(arm['status'] not in ('success', 'no_mentions') for arm in arms):
+        return False
+    expected = names(reference_spans)
+    correct = [names(arm['spans']) == expected for arm in arms]
+    return any(correct) and not all(correct)
+
+
+def with_name_projection(report, projection):
+    if projection['reference_sha256'] != report['provenance']['reference_sha256']:
+        raise ValueError('Name projection references differ.')
+    docs = {doc['document_id']: doc for doc in report['documents']}
+    for arm_id, arm in projection['arms'].items():
+        projected = {doc['document_id']: doc for doc in arm['per_document']}
+        if projected.keys() != docs.keys() or len(projected) != len(arm['per_document']):
+            raise ValueError('Name projection population differs.')
+        native = report['field_scores'][arm_id]['mention_detection']
+        if any(native[key] != value for key, value in arm['native_name_score'].items()):
+            raise ValueError('Name projection native score differs.')
+        for doc_id, doc in projected.items():
+            if doc['text_revision'] != docs[doc_id]['text_revision']:
+                raise ValueError('Name projection text revision differs.')
+            for span in doc['projected_names']:
+                if span['label'] != 'SOFTWARE' or docs[doc_id]['text'][span['start']:span['end']] != span['text']:
+                    raise ValueError('Name projection span does not match input.')
+    result = deepcopy(report)
+    result['name_projection'] = deepcopy(projection)
+    return result
+
+
+def name_score(report, arm_id):
+    projection = report.get('name_projection', {}).get('arms', {}).get(arm_id)
+    return projection['projected_name_score'] if projection else report['field_scores'][arm_id]['mention_detection']
+
+
+def name_arms(report, doc):
+    arms = []
+    for arm_id, _ in ARMS:
+        arm = deepcopy(next(a for a in doc['arms'] if a['arm_id'] == arm_id))
+        projection = report.get('name_projection', {}).get('arms', {}).get(arm_id)
+        if projection:
+            projected = next(d for d in projection['per_document'] if d['document_id'] == doc['document_id'])
+            arm['spans'] = projected['projected_names']
+        arms.append(arm)
+    return arms
 
 
 def sha(data):
@@ -33,7 +132,21 @@ def read_verified():
     control = json.loads(control_raw)['references']['agent_provisional']['arms']
     assert control['scibert-frozen-002']['labels']['SOFTWARE']['operational']['f1'] == 0.0
     assert pct(control['scibert-detector-005']['labels']['SOFTWARE']['operational']['f1']) == '63.8%'
-    return json.loads(raw)
+    extra_raw = SCIBERT_REPORT.read_bytes()
+    assert sha(extra_raw) == SCIBERT_HASH, 'Softcite SciBERT evidence changed; review before regenerating.'
+    engine_raw = ENGINE_METADATA.read_bytes()
+    assert sha(engine_raw) == ENGINE_HASH, 'Verified Softcite engine metadata changed.'
+    engine = json.loads(engine_raw)
+    assert engine['model_selection']['software'] == 'delft_BERT_SciBERT'
+    assert 'Loading DeLFT model for software with architecture BERT' in engine['evidence']
+    extra = json.loads(extra_raw)
+    assert extra['field_scores'][SCIBERT_ARM]['failures']['failed_documents'] == 0
+    projection_raw = PROJECTION.read_bytes()
+    assert sha(projection_raw) == PROJECTION_HASH, 'Name projection evidence changed.'
+    sensitivity_raw = SENSITIVITY.read_bytes()
+    assert sha(sensitivity_raw) == SENSITIVITY_HASH, 'Name projection sensitivity changed.'
+    merged = merge_comparison(json.loads(raw), extra, SCIBERT_ARM)
+    return with_name_projection(merged, json.loads(projection_raw))
 
 
 def p(text, style='body'):
@@ -57,6 +170,8 @@ def example(report, prefix, title, quote, analysis):
     assert len(matches) == 1
     doc = matches[0]
     assert quote in doc['text'], (title, quote)
+    arms = name_arms(report, doc)
+    assert clean_name_difference(doc['reference_spans'], arms), 'No clean name-extraction winner.'
     doi = doc['source_ids']['doi']
     return {'type': 'example', 'title': title, 'quote': quote, 'analysis': analysis,
             'source_url': doi, 'source_label': doi.removeprefix('https://doi.org/'),
@@ -64,162 +179,124 @@ def example(report, prefix, title, quote, analysis):
 
 
 def make_pages(report):
-    rows = []
-    for arm, label in [('full-label-006', 'SciBERT 006'), ('softcite-0.8.1', 'Softcite 0.8.1')]:
-        s = report['field_scores'][arm]
-        m = s['mention_detection']
-        rows.append([label, pct(m['precision']), pct(m['recall']), pct(m['f1']),
-                     f"{m['tp']} / {m['fp']} / {m['fn']}"])
-    assert rows[0][3] == '74.2%' and rows[1][3] == '36.9%'
-    time_rows = []
-    for device in ('cpu', 'mps'):
-        for arm, label in [('full-label-006', '006'), ('softcite-0.8.1', 'Softcite service')]:
-            r = next(t for t in report['timing_rows'] if t['device'] == device and t['arm_id'] == arm)
-            s = r['summary']
-            assert s['successful'] == s['scheduled'] == 90 and s['failed'] == 0
-            time_rows.append([label, device.upper() + ' pass',
-                              f"{s['latency_median_seconds'] * 1000:.1f} ms",
-                              f"{s['latency_p95_seconds'] * 1000:.1f} ms",
-                              f"{s['successful_per_second']:.2f}"])
+    quality_rows = []
+    timing_rows = []
+    for arm, label in ARMS:
+        m = name_score(report, arm)
+        quality_rows.append([label, pct(m['precision']), pct(m['recall']), pct(m['f1']),
+                             f"{m['tp']} / {m['fp']} / {m['fn']}"])
+        timing = next(t for t in report['timing_rows'] if t['device'] == 'cpu' and t['arm_id'] == arm)
+        s = timing['summary']
+        assert s['successful'] == s['scheduled'] == 90 and s['failed'] == 0
+        timing_rows.append([label, f"{s['latency_median_seconds'] * 1000:.1f} ms",
+                            f"{s['latency_p95_seconds'] * 1000:.1f} ms",
+                            f"{s['successful_per_second']:.2f}"])
+    extra = name_score(report, SCIBERT_ARM)
+    if extra['f1'] > report['field_scores']['full-label-006']['mention_detection']['f1']:
+        conclusion = ('Softcite’s SciBERT extractor has the best name F1 in this test. '
+                      'My model improves on the CRF baseline, but does not beat this stronger baseline.')
+    elif extra['f1'] == report['field_scores']['full-label-006']['mention_detection']['f1']:
+        conclusion = ('My model and Softcite’s SciBERT extractor tie on name F1 in this test. '
+                      'Both improve on the CRF baseline here; neither result proves a general advantage.')
+    else:
+        mine = report['field_scores']['full-label-006']['mention_detection']
+        gain = (mine['f1'] - extra['f1']) * 100
+        conclusion = (f'The two encoders are close: my model is ahead by {gain:.1f} F1 points, '
+                      f'finding {mine["tp"]} reference names versus {extra["tp"]}. '
+                      'This is a modest lead on a small sample, not proof of a general advantage.')
     first = [
-        p('Software mention extraction', 'title'),
-        p('Selected POC: SciBERT 006 compared with Softcite', 'subtitle'),
-        p('Krushi Raj Tula | 30 September 2026 | Research POC', 'meta'),
-        p('<b>006 is the selected model for this POC.</b> It recovers 33 of 51 reviewed software mentions, '
-          'versus 12 for the installed Softcite configuration, at similar precision. '
-          'The strongest result is improved recall on these OpenAlex snippets.', 'lead'),
-        p('006 uses five separately fine-tuned SciBERT stages: names/versions, version ownership, '
-          'author intent, sentiment and aliases. Training: 161 passages from 21 CC-BY papers '
-          '(11 human-reviewed, 150 agent-provisional). Scores are uncalibrated.', 'small'),
-        heading('Quality on identical inputs'),
-        table(['Model', 'Precision', 'Recall', 'Name F1', 'TP / FP / FN'], rows,
-              [130, 80, 80, 80, 125]),
-        p('Precision = correct / scored predictions; recall = correct / reference mentions; '
-          'F1 balances both. Exact boundaries matter. 006: 33/38 scored predictions are correct; '
-          'Softcite: 12/14. Five additional 006 predictions and three Softcite predictions fall outside '
-          'reviewed software coverage and are excluded, not counted correct.', 'small'),
-        p('<b>Scope:</b> 30 software-query-selected OpenAlex snippets; 28 with scorable regions and '
-          'two fully masked. Agents labelled the text before inference; no human-adjudicated gold test. '
-          'Inputs include non-English, OCR and metadata-like fragments. All 30 remain in operational counts. '
-          'We now select 006 using these results, so this sample is exposed, not an untouched final test.'),
-        table(['Other fields', '006', 'Softcite', 'Support / interpretation'], [
-            ['Intent exact-set accuracy', '56.25%', '16.67%', '48 eligible mentions; missed names count'],
-            ['Author-use F1', '50.0%', '0.0%', 'Only two positive uses'],
-            ['False version-owner links', '3', '1', 'No true versions; recall unmeasured'],
-            ['Expressed sentiments recovered', '0 / 4', 'N/A', '006 also adds seven false opinions'],
-            ['Reviewed alias pairs recovered', '0 / 1', 'N/A', 'One positive; no negative pairs'],
-            ['Complete-occurrence F1', '45.8%', 'N/A', '48 refs: name, versions, intent, sentiment; no aliases'],
-        ], [165, 60, 65, 205]),
-        p('N/A means unsupported by the compared output, not zero quality. Created/shared intent and '
-          'mixed sentiment have no positive references. Both systems avoid false names on eight checked negatives.', 'small'),
-        p('<b>Selection trade-off:</b> 007 loses four correct names (68.2% name F1) and adds more false '
-          'version links; it remains experimental. 005 has a slightly higher complete-row F1 (47.5%). '
-          '006 is the name-extraction choice, not a winner in every field. On the separate earlier 27 '
-          'snippets, 006/Softcite name F1 is 63.8%/59.6%; the margin depends on the sample.'),
-        heading('Local full-pipeline timing'),
-        table(['System', 'Comparison', 'Median', 'p95', 'Snippets/s'], time_rows, [145, 90, 80, 85, 95]),
-        p('Three warmed, batch-one repeats; 90/90 successful requests per row; excludes load/warmup and publication. '
-          '006 has higher aggregate throughput; Softcite has lower median latency. Apple M4 Max; '
-          'SciBERT runs native CPU/MPS, Softcite runs an amd64 container using Wapiti + LinkBERT. '
-          'The pass label does not mean Softcite uses MPS. Softcite returns no mentions on 22/30 inputs. '
-          'These are separate timing runs, not timed copies of the scored predictions. '
-          'No equal-runtime cost or full-paper throughput claim follows.', 'small'),
+        p('OSSoMeX', 'title'),
+        p('Finding software mentions in research', 'subtitle'),
+        p('Krushi Raj Tula | 30 September 2026 | Early results', 'meta'),
+        p('Following my earlier pilot, I fine-tuned SciBERT to find software names and describe '
+          'how they are mentioned. I compared it with both the CRF and SciBERT extractors in Softcite 0.8.1.', 'lead'),
+        p('OSSoMeX means Open Source Software Mention Extractor. My local model has five stages '
+          'for names, version links, intent, sentiment and aliases. I trained on 161 passages from '
+          '21 CC-BY papers: 11 passages reviewed by a person and 150 provisionally labelled by AI.', 'small'),
+        heading('What the test shows'),
+        table(['Model', 'Precision', 'Recall', 'Name F1', 'Correct / extra / missed'],
+              quality_rows, [140, 70, 70, 70, 145]),
+        p(conclusion),
+        p('Precision asks how many extracted names are correct. Recall asks how many reference names '
+          'were found. F1 balances both. Names must match exact text boundaries. For a common format, '
+          'I counted Softcite’s language fields as names and left out entries it marked implicit. '
+          'This mapping was checked after the run; labels stayed unchanged. Native name-only F1 was '
+          '36.9% for CRF and 69.7% for SciBERT. Counting languages without filtering implicit names '
+          'gives SciBERT 72.5%, so the result stays close.', 'small'),
+        p('<b>Test scope:</b> the same 30 OpenAlex snippets, found using software-name queries. '
+          'There are 51 reference names in 28 scorable snippets; two snippets are fully excluded from scoring. '
+          'Unreviewed regions are not scored. The labels were prepared by AI before inference, not '
+          'independently confirmed by a person. These are now development results, not a final blind test. '
+          'No passages were removed to improve the numbers.', 'small'),
+        heading('Usage and other fields'),
+        p('Intent describes whether software was used, created, shared or just mentioned. '
+          'My model gets 27 of 48 eligible intent labels right, counting missed names as errors. '
+          'The field-mapping audit above covers names, not an aligned intent comparison.'),
+        p('Version linking is not settled: this sample has no true version links, so it cannot measure '
+          'version recall. My model also misses the four expressed opinions and the one checked alias pair, '
+          'and adds seven false opinions. These fields need more work before I would rely on them.'),
+        heading('Time in my local setup'),
+        table(['CPU comparison', 'Median / snippet', 'Slow tail (p95)', 'Snippets / second'],
+              timing_rows, [160, 115, 115, 105]),
+        p('Three warmed runs of all 30 snippets, one request at a time; all 90 requests per row succeeded. '
+          'Model loading is excluded. Timing runs are separate from the scored runs. '
+          'The name-field conversion is not timed. '
+          'My model runs native PyTorch on an Apple M4 Max; Softcite runs in an amd64 Linux container. '
+          'Work also varies with the number of names found. '
+          'These numbers describe my setup, not a fair production cost comparison.', 'small'),
     ]
     second = [
-        p('Cases where each system does better', 'title2'),
-        p('Illustrative cases selected after evaluation, not a second benchmark. Quotes show short source fragments; '
-          'outputs below come from the full captured snippets, not from rerunning these shortened quotes.', 'small'),
-        example(report, '1072bf', 'Softcite misses explicit author use',
-                'by using both WEKA and Scikit-Learn',
-                '006 finds both names and labels both used. Softcite returns no mentions. '
-                'This is a recall gap on this input; it does not identify the internal cause of Softcite\'s miss.'),
-        example(report, '8ab60e', '006 recovers names in a library description',
-                'IPython [16] supports parallelized NumPy operations.',
-                '006 finds 5 of 6 reviewed names in the full snippet; Softcite finds none. '
-                '006 still misses one repeated NumPy mention. These are name-recall gains, not perfect full-field outputs.'),
-        example(report, '36ce86', '006 separates a software name from a section heading',
-                'II.MATERYAL VE METOD 2.1.GROMACS GROMACS',
-                'In this Turkish fragment, 006 finds three GROMACS mentions without inventing versions. '
-                'Softcite instead labels MATERYAL VE METOD as software and 2.1.GROMACS GROMACS as its version. '
-                '006 still misses the expanded name and alias relation.'),
-        example(report, '868e13', 'Softcite finds repeated LaTeX and SPSS names',
-                'Create plots and LaTeX tables that look like SPSS output',
-                'Softcite finds five of seven reference mentions; 006 finds three. '
-                'Softcite gets both LaTeX and all three SPSS occurrences. 006 gets R, knitr and one LaTeX. '
-                'Softcite also mistakes code for software. This source is a package-description fragment.'),
-        example(report, '03d232', 'Softcite gets this boundary right',
-                'image processing software (ImageJ®,',
-                'The reference excludes the trademark glyph. Softcite extracts ImageJ; 006 extracts ImageJ® '
-                'and fails exact matching. Token-boundary handling needs work.'),
-        example(report, 'f5b911', 'Our version linking still makes a serious error',
-                '2 (Pedregosa et al., 2011).',
-                '006 finds both scikit-learn mentions but assigns citation number 2 as their version and '
-                'positive sentiment to both. The reviewed versions are absent and sentiment not expressed: '
-                'the nearby praise describes another tool. Softcite misses both names. '
-                'Name recall alone cannot establish trustworthy citation objects.'),
-        p('Source fragments above are short, attributed illustrations. The separate local review file '
-          'contains all 30 full inputs, provisional expected outputs, masks and model outputs. '
-          'Review files remain outside Git and are not email attachments until sharing rights are checked.', 'small'),
+        p('Examples and next steps', 'title2'),
+        p('Short excerpts from the full test inputs. Examples were chosen after scoring to show a clear '
+          'name-extraction difference; they do not change the benchmark above.', 'small'),
     ]
-    third = [
-        p('Interpretation and next experiments', 'title2'),
-        heading('Published F1 above 0.8 and lower snippet recall can coexist'),
-        p('The OpenAlex proposal cites strong published extraction results. Our installed Softcite misses '
-          '39 of 51 reference mentions on this real-source snippet sample, including explicit author use. '
-          'That is a substantial recall gap for this workflow; it does not invalidate a full-document gold benchmark.'),
-        p('The cited <a href="https://aclanthology.org/2025.sdp-1.13/">SOMD2025 shared-task paper</a> '
-          'reports winning composite NER/relation scores of 0.89 in Phase I and 0.63 on out-of-distribution '
-          'Phase II data. Those are not our exact-name micro-F1 and are not Softcite-specific results. '
-          'Our narrower context, noisy text, label policy and provisional references also differ. '
-          'They are plausible contributors to the gap, not isolated causes.'),
-        p('<a href="https://github.com/softcite/software-mentions">Softcite supports CRF and fine-tuned '
-          'transformer extraction, including SciBERT</a>, plus PDF structure-aware processing. '
-          'This benchmark used Wapiti extraction with LinkBERT context heads, not its SciBERT '
-          'extractor. Recheck the team\'s preferred configuration on representative documents '
-          'before making broader superiority claims.'),
-        heading('Why test a fine-tuned encoder?'),
-        p('<a href="https://github.com/allenai/scibert">Base SciBERT</a> provides scientific-text '
-          'representations, not a ready software-name head. Task supervision lets us adapt name boundaries, '
-          'version ownership and usage distinctions to the target schema. 006\'s observed advantages here '
-          'are 21 more correct names, 41.2 percentage points more recall and 37.2 points more name F1, '
-          'with similar precision. These are pipeline-level gains; this comparison does not isolate '
-          'encoder fine-tuning from architecture, data or deployment differences.'),
-        p('On the separate earlier 27 snippets, the matched frozen-encoder/trained-head control scores '
-          '0.0% exact-name F1 versus 63.8% for 006\'s detector under the corrected same scorer. '
-          'This fixed-recipe experiment supports fine-tuning, but does not test an optimized frozen-feature '
-          'baseline. The pipeline also exposes local version/alias and '
-          'sentiment outputs; extra fields are useful capabilities, not evidence of reliable accuracy.', 'small'),
-        heading('WP4 resolution layer and optional funder context'),
-        p('Add a resolver after extraction: <b>mention + paper context → registry candidates → evidence-based '
-          'ranking → resolved ID or abstention</b>. GitHub search can retrieve candidates; its first result '
-          'does not establish identity. Check explicit URLs, package ecosystem, software DOI, authors and '
-          'repository metadata. Prefer a cached WP1 registry; include non-GitHub projects, forks, renamed '
-          'repositories and ambiguous names such as STAR. Preserve the extracted mention and resolution '
-          'provenance separately. Measure end-to-end link precision/recall and retrieval coverage.'),
-        p('For funders, resolved usage by field and time could show adoption and dependence. '
-          'Software-directed sentiment might add context about documented strengths or pain points, '
-          'but it is experimental: 006 misses all four expressed opinions and invents seven. '
-          'Do not rank funding priority from sentiment or mention counts alone. Coverage bias, criticality '
-          'and maintenance need also matter; human judgment remains essential.'),
-        heading('Next steps for quality and timing'),
-        p('<b>Quality:</b> review the exported labels; keep these diagnostics out of training. Add new '
-          'licensed training papers with repeated names, trademark boundaries, real versions and citation/section '
-          'number negatives. Test one stage at a time and multiple seeds on development data. '
-          'Calibrate confidence there, then use another untouched test. Compare registry matching and '
-          'the preferred Softcite configuration as well as 006.'),
-        p('<b>Timing:</b> the CLI already loads models once and uses evaluation/inference mode. '
-          'Profile the five stages, remove repeated candidate construction/tokenization, batch attribute '
-          'candidates and detector windows, and reduce device transfers. Gate each change on exact output '
-          'agreement or a disclosed quality trade-off. Shared-encoder distillation comes later because '
-          'it changes the model. No optimization speedup is claimed yet; measure cold load, warm median/p95, '
-          'memory and cost on comparable native deployments.'),
-        p('Evidence: cycle 003 report SHA-256 begins 1ff19fe04e56; selected pipeline manifest begins '
-          'fe92420fff8a. Base: allenai/scibert_scivocab_cased; detector-005-wordpiece, linker-004, '
-          'intent-003, sentiment-003, alias-003. Selection changes no weights. '
-          'Registry links, calibrated confidence and funding-use validity remain unproven. '
-          'Full excerpts and weights remain local pending sharing checks.', 'footnote'),
+    candidates = [
+        ('1072bf', 'Explicit software use', 'by using both WEKA and Scikit-Learn'),
+        ('12827f', 'Software inside a workflow',
+         'by utilizing GROMACS modules which are integrated into python scripts.'),
     ]
-    return [first, second, third]
+    for prefix, title, quote in candidates:
+        doc = next(d for d in report['documents'] if d['document_id'].split(':')[-1].startswith(prefix))
+        arms = name_arms(report, doc)
+        if not clean_name_difference(doc['reference_spans'], arms):
+            continue
+        expected = ', '.join(s['text'] for s in doc['reference_spans'] if s['label'] == 'SOFTWARE')
+        outputs = '; '.join(
+            label + ': ' + (', '.join(s['text'] for s in arm['spans'] if s['label'] == 'SOFTWARE') or 'none')
+            for (_, label), arm in zip(ARMS, arms)
+        )
+        analysis = f'<b>Expected names:</b> {escape(expected)}.<br/>{escape(outputs)}.'
+        if prefix == '1072bf':
+            analysis += ' Both encoders also correctly label the two names as used.'
+        if prefix == '12827f':
+            analysis += ' Counting Softcite’s separate language field makes both encoders correct here.'
+        second.append(example(report, prefix, title, quote, analysis))
+    second.extend([
+        heading('Why keep testing a fine-tuned encoder?'),
+        p('<a href="https://github.com/allenai/scibert">Base SciBERT</a> is not a ready-made software '
+          'extractor. Fine-tuning teaches it the names and labels needed for this task. '
+          '<a href="https://github.com/softcite/software-mentions">Softcite’s SciBERT extractor</a> '
+          'is already fine-tuned too. This comparison tests two trained systems; it does not isolate '
+          'fine-tuning as the only reason for a difference.'),
+        p('The name results give me a reason to keep testing this approach alongside Softcite. '
+          'They do not show that Softcite fails generally or contradict its published benchmarks. '
+          'Short, noisy snippets and provisional labels are different from a full-paper gold-standard test.'),
+        heading('How this could help WP4'),
+        p('My next step would be a separate linking layer: take a mention and its context, find candidates '
+          'in software registries or GitHub, then return a supported match or leave it unresolved. '
+          'A search result alone is not a verified identity. I have not measured repository-link accuracy yet.'),
+        p('Usage intent could help distinguish software that was actually used from software only discussed. '
+          'Later, reliable sentiment might add context for researchers and funders: a mention is not always '
+          'an endorsement. I would not use mention counts or sentiment alone to judge funding value.'),
+        heading('What I would improve next'),
+        p('<b>Quality:</b> review the labels with a person, add new training papers with real versions and '
+          'ambiguous names, and test on papers kept separate from training. '
+          '<b>Speed:</b> profile the five stages, batch work and avoid repeated text processing. '
+          'Check that outputs stay the same, then measure again on comparable hardware.'),
+        p('Feedback I would value: which extraction fields, Softcite setup and representative papers '
+          'would make the next comparison most useful for OpenAlex?', 'callout'),
+    ])
+    return [first, second]
 
 
 def html_block(b):
@@ -255,10 +332,15 @@ a{color:#126c79;text-underline-offset:2px}a:focus-visible{outline:3px solid #d17
 
 
 def render_pdf(pages):
+    from reportlab.lib import colors
+    from reportlab.lib.enums import TA_LEFT
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, KeepTogether
     ink = colors.HexColor('#16343c')
     accent = colors.HexColor('#136e79')
     muted = colors.HexColor('#52676e')
-    base = ParagraphStyle('body', fontName='Helvetica', fontSize=9.15, leading=12.1,
+    base = ParagraphStyle('body', fontName='Helvetica', fontSize=10, leading=13.5,
                           textColor=ink, spaceAfter=6.5, alignment=TA_LEFT)
     styles = {'body': base}
     for name, settings in {
@@ -269,7 +351,7 @@ def render_pdf(pages):
         'lead': dict(fontSize=10.6, leading=14, spaceAfter=9),
         'heading': dict(fontName='Helvetica-Bold', fontSize=11.5, leading=14,
                         textColor=accent, spaceBefore=8, spaceAfter=5, keepWithNext=True),
-        'small': dict(fontSize=8, leading=10.3, textColor=muted, spaceAfter=7),
+        'small': dict(fontSize=8.8, leading=11.5, textColor=muted, spaceAfter=7),
         'footnote': dict(fontSize=7.4, leading=9.2, textColor=muted, spaceBefore=3),
         'example_title': dict(fontName='Helvetica-Bold', fontSize=9.6, leading=12, spaceAfter=3),
         'quote': dict(fontName='Times-Italic', fontSize=10.2, leading=12.5, textColor=accent,
@@ -277,8 +359,8 @@ def render_pdf(pages):
         'source': dict(fontSize=7.2, leading=9, textColor=muted, spaceAfter=6),
         'callout': dict(fontName='Helvetica-Bold', fontSize=9.3, leading=12.5, textColor=accent,
                         spaceBefore=5, spaceAfter=7),
-        'cell': dict(fontSize=8, leading=10, spaceAfter=0),
-        'th': dict(fontName='Helvetica-Bold', fontSize=7.8, leading=10, spaceAfter=0),
+        'cell': dict(fontSize=8.6, leading=10.8, spaceAfter=0),
+        'th': dict(fontName='Helvetica-Bold', fontSize=8.2, leading=10.5, spaceAfter=0),
     }.items():
         styles[name] = ParagraphStyle(name, parent=base, **settings)
     story = []
@@ -321,12 +403,13 @@ def render_pdf(pages):
         canvas.drawRightString(A4[0] - 40, 23, f'{doc.page} / {len(pages)}')
     PDF.parent.mkdir(parents=True, exist_ok=True)
     doc = SimpleDocTemplate(str(PDF), pagesize=A4, rightMargin=40, leftMargin=40,
-                            topMargin=41, bottomMargin=36, title='Software mention extraction: OpenAlex progress',
-                            author='Krushi Raj Tula', subject='Preliminary SciBERT and Softcite comparison')
+                            topMargin=41, bottomMargin=36, title='OSSoMeX: finding software mentions in research',
+                            author='Krushi Raj Tula', subject='Preliminary comparison with Softcite CRF and SciBERT')
     doc.build(story, onFirstPage=furniture, onLaterPages=furniture)
 
 
 def main():
+    from pypdf import PdfReader
     report = read_verified()
     pages = make_pages(report)
     OUT.mkdir(parents=True, exist_ok=True)
@@ -343,11 +426,16 @@ def main():
     pdf = PdfReader(PDF)
     assert len(pdf.pages) == len(pages), f'Expected {len(pages)} pages, got {len(pdf.pages)}; inspect layout.'
     text = '\n'.join(page.extract_text() for page in pdf.pages)
-    for required in ('74.2%', '68.2%', '36.9%', '33 / 5 / 18', '12 / 2 / 39', '7.07', '3.60',
-                     '18.55', '3.85', 'WP4', '0.89', '0.63', '2 (Pedregosa'):
+    for required in ('OSSoMeX', 'Softcite (SciBERT)', 'Softcite (CRF)', '74.2%', '36.9%',
+                     '33 / 5 / 18', '32 / 5 / 19', '12 / 1 / 39', '7.07', '3.60', 'WP4'):
         assert required in text, required
-    for private in ('/Users/', '127.0.0.1', 'localhost', 'github.com/krushiraj/openalex-sw-mentions'):
+    for arm, _ in ARMS:
+        assert pct(name_score(report, arm)['f1']) in text
+    for private in ('/Users/', '127.0.0.1', 'localhost', 'github.com/krushiraj/openalex-sw-mentions',
+                    'github.com/krushiraj/OSSoMeX'):
         assert private not in html and private not in text, private
+    assert not re.search(r'\b(?:005|006|007|our|we)\b', text, flags=re.IGNORECASE)
+    assert 'selection trade' not in text.lower()
     assert '<script' not in html and 'http://' not in html
     links = []
     for page in pdf.pages:
@@ -357,17 +445,25 @@ def main():
                 links.append(str(uri))
     source_links = sorted(set(links))
     expected_links = {b['source_url'] for page in pages for b in page if b['type'] == 'example'}
-    expected_links.update({'https://github.com/allenai/scibert', 'https://aclanthology.org/2025.sdp-1.13/',
+    expected_links.update({'https://github.com/allenai/scibert',
                            'https://github.com/softcite/software-mentions'})
-    assert set(source_links) == expected_links and len(source_links) == 9
+    assert set(source_links) == expected_links
     assert 'engineering team' not in text and 'join the team' not in text
     receipt = {'report_sha256': HASH, 'control_report_sha256': CONTROL_HASH,
+               'softcite_scibert_report_sha256': SCIBERT_HASH,
+               'softcite_scibert_engine_metadata_sha256': ENGINE_HASH,
+               'name_projection_sha256': PROJECTION_HASH,
+               'name_projection_sensitivity_sha256': SENSITIVITY_HASH,
                'html_sha256': sha(html.encode()),
                'pdf_sha256': sha(PDF.read_bytes()), 'pdf_pages': len(pdf.pages),
                'pdf_bytes': PDF.stat().st_size, 'source_link_count': len(source_links),
                'source_links': source_links, 'word_count_pdf': len(text.split()),
                'claims_status': 'provisional_diagnostic_not_general_superiority',
                'publication_status': 'local_review_only_not_sent',
+               'population_documents': len(report['documents']),
+               'reference_sha256': report['provenance']['reference_sha256'],
+               'comparison_labels': dict(ARMS),
+               'example_selection': 'posthoc_clear_name_difference_aggregate_population_unchanged',
                'examples': [{k: b[k] for k in ('title', 'document_id', 'source_url', 'quote')}
                             for page in pages for b in page if b['type'] == 'example']}
     (OUT / 'verification.json').write_text(json.dumps(receipt, indent=2) + '\n')
