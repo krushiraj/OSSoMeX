@@ -1,0 +1,18 @@
+{
+  "schema_version": "poc-model-selection-1",
+  "selected_on": "2026-09-30",
+  "selected_arm": "full-label-006",
+  "checkpoint": "checkpoints/scibert-full-label-006",
+  "manifest_sha256": "fe92420fff8a57b078c3b210fc5312c1a65d599dfc850a479ce266dafb689f8d",
+  "selection_scope": "current_local_poc_software_name_extraction",
+  "selection_evidence": "reports/scibert-v2/focused-cycle-003/fresh30/dashboard-reviewed/report.json",
+  "evidence_sha256": "1ff19fe04e56c8b9208865f91b2c15e9e3e50b29d724b8f166b377a824e6aa10",
+  "selection_used_comparison_results": true,
+  "reference_status": "agent_provisional_not_human_gold",
+  "scores_calibrated": false,
+  "production_ready": false,
+  "cli_requires_explicit_model": true,
+  "experimental_arm": "full-label-007",
+  "retained_comparator": "full-label-005",
+  "decision_document": "docs/scibert-poc-selection.md"
+}
