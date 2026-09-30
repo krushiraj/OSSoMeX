@@ -1,0 +1,92 @@
+[
+  {
+    "title": "006 leads name extraction; do not promote 007",
+    "body": "On the new 30-passage diagnostic sample, exact name F1 is 66.7% for 005, 74.2% for 006, 68.2% for new 007 and 36.9% for the installed Softcite. Candidate 006 finds 33 of 51 reference names with five false positives; 007 finds 29 with five false positives; Softcite finds 12 with two false positives. The extra training did not improve on 006. These are query-conditioned, agent-provisional results from 28 passages with some scorable coverage; two fully masked passages remain in the operational and timing population.",
+    "provenance": "Cycle003 fresh30 frozen predictions and exact-boundary source references. Labels preceded inference; no threshold or epoch selection used these results. The endpoint includes non-English and OCR-damaged text; unresolvable regions are masked.",
+    "scope": "scored_population",
+    "review_kind": "agent_provisional"
+  },
+  {
+    "title": "Name F1 does not settle the full-label comparison",
+    "body": "Complete-occurrence F1, excluding aliases, is 47.5% for 005, 45.8% for 006 and 38.0% for 007 on 48 eligible occurrences. Intent exact-set accuracy is 43.8%, 56.2% and 39.6%; used-intent F1 is 30.8%, 50.0% and 28.6%, with only two positive uses. Candidate 007 doubles false version-owner links from 006's three to six; 005 has none and Softcite one. There are no gold versions, so this sample cannot estimate version recall. Candidate 007 reduces false expressed opinions from seven to one, but all three checkpoints miss the one positive and three negative reference opinions. Shared/created intent and mixed sentiment have no positive test support.",
+    "provenance": "Full-field scores with unknown masks; missing names count against end-to-end attributes. Softcite sentiment and complete-occurrence outputs are unsupported.",
+    "scope": "scored_population",
+    "review_kind": "agent_provisional"
+  },
+  {
+    "title": "Fine-tuning helps under this recipe; more data did not guarantee a gain",
+    "body": "Base SciBERT has no software-extraction head and is N/A. The matched frozen encoder with a trained extraction head achieves zero exact name F1 under this fixed recipe. Encoder/head initialization, features and sample draws match the fine-tuned detector. This is a controlled recipe comparison, not an optimized frozen-feature baseline. Candidate 007 adds 21 passages but no new training parents, then retrains all five stages together. The experiment cannot isolate one annotation's or head's contribution. Two Design Expert spans are excluded because the tokenizer cannot separate the trademark glyph.",
+    "provenance": "Verified training data006, preflight, stage receipts and checkpoint hashes. All 161 previous items are preserved; new labels remain provisional.",
+    "scope": "scored_population",
+    "review_kind": "agent_provisional"
+  },
+  {
+    "title": "Higher local throughput, but Softcite has the faster median",
+    "body": "For name-leading 006, full-pipeline throughput is 18.55 passages/s on MPS versus Softcite's 3.85, and 7.07/s on CPU versus 3.60. Median latency favors Softcite: about 5.6 ms versus 30.1 ms for 006 on MPS, and 5.7 ms versus 77.2 ms on CPU. Candidate 006 has the shorter p95: 185.7/519.9 ms on MPS/CPU, versus 1294.9/1392.8 ms for Softcite. Softcite returns no mentions on 22 of 30 passages. All arms complete 90 requests per timing pass with no failures. Loading/warmup are excluded. Softcite is an amd64 Wapiti/LinkBERT container on this arm64 Mac; the MPS/CPU label for its rows identifies the comparison pass, not GPU execution by Softcite.",
+    "provenance": "Three batch-one repeats, identical seeded inputs, synchronized accelerator timing after training ended. Saved CPU/MPS request receipts; deployment-specific results, no cost measurement.",
+    "scope": "scored_population",
+    "review_kind": "agent_provisional"
+  },
+  {
+    "title": "Alias reference projection repaired without relabeling",
+    "body": "The first report skipped the one explicit alias because its canonical relation lacked the exported known/members representation expected by the scorer. A separate reference projection adds those representation fields from the already-frozen decision and mention IDs. It changes no source span, opinion, intent or alias decision and reuses all saved predictions. One positive pair and no negative pairs cannot establish broad alias accuracy. The original reference and first report remain preserved for audit.",
+    "provenance": "Source reference003 and deterministic projection004; the adapter correction occurred after inference and is disclosed separately from the pre-inference label freeze.",
+    "scope": "scored_population",
+    "review_kind": "agent_provisional"
+  },
+  {
+    "title": "Next iteration: retain the stronger checkpoint and target errors",
+    "body": "Keep 007 experimental. Candidate 006 is stronger for names, while 005 has the highest complete-occurrence F1 here; neither is a validated universal winner. Prioritize repeated-name recall, false version links and author-use overprediction with new licensed training parents. Address the tokenizer's trademark boundary limitation. Select the next change on development data before another fresh comparison. Keep raw-text reports local while redistribution rights are unresolved. An aggregate-only OpenAlex progress draft can report these preliminary results without claiming production readiness or general superiority.",
+    "provenance": "Fresh30 results, separate exposed regressions and source-support audit. No new training or promotion follows automatically from this report.",
+    "scope": "scored_population",
+    "review_kind": "agent_provisional"
+  },
+  {
+    "title": "Repeated names: Softcite wins this passage",
+    "body": "Candidate 007 loses the LaTeX occurrence found by 006; both miss all three SPSS occurrences. Softcite finds both LaTeX occurrences and all three SPSS occurrences, but misses R and knitr and falsely labels code. Aggregate SciBERT gains do not mean it wins every passage. Add source-diverse repeated-name examples on development data before another fresh test.",
+    "provenance": "Saved 006/007/Softcite predictions compared with source-frozen provisional references; no post-result relabeling.",
+    "scope": "scored_population",
+    "review_kind": "agent_provisional",
+    "document_ids": ["openalex-snippet:868e130536425db640810febc6dd8997ac7295f63e32cf7a2f189582ed3ebb14"]
+  },
+  {
+    "title": "More training loses a NumPy detection",
+    "body": "Candidate 006 finds NumPy at offsets 159–164; 007 misses it. Both miss its repeated occurrence at 209–214. Softcite returns no mentions. This is a recall regression, not a confidence-display problem.",
+    "provenance": "Exact source offsets and saved predictions from the frozen fresh30 run.",
+    "scope": "scored_population",
+    "review_kind": "agent_provisional",
+    "document_ids": ["openalex-snippet:8ab60eeb9421a5d4fae6dd5a803b00a0bfadf3d8631c5506326ed8e3dde0fafe"]
+  },
+  {
+    "title": "Section numbering becomes a false version",
+    "body": "Candidate 007 attaches section number 2.1 to all three GROMACS occurrences and changes their intent from mentioned to used. Candidate 006 avoids both errors. Softcite also misreads the heading and number, predicting MATERYAL VE METOD as software with 2.1.GROMACS GROMACS as its version. All systems miss the full-name expansion needed for the reviewed GROMACS alias pair. Focus version training on section, citation and measurement negatives, and separate software descriptions from evidence of author use.",
+    "provenance": "Frozen source decisions, alias projection004 and saved predictions. The projection repairs representation only.",
+    "scope": "scored_population",
+    "review_kind": "agent_provisional",
+    "document_ids": ["openalex-snippet:36ce8633ba28e1f967f387d9ff289ea0447d01968a929b84f2f7fba320da972b"]
+  },
+  {
+    "title": "Better sentiment restraint, but worse name recall",
+    "body": "Candidate 007 clears 006's four unsupported positive opinions on NumPy, CuPy, ClPy and Bohrium. The reviewed sentiment is not expressed. However, 007 loses the first NumPy occurrence at 13–18. Softcite returns no mentions. The improved sentiment restraint does not offset every extraction regression.",
+    "provenance": "Source-frozen software-directed sentiment labels and saved complete predictions.",
+    "scope": "scored_population",
+    "review_kind": "agent_provisional",
+    "document_ids": ["openalex-snippet:ac4cfd46ae08b7a6a36970ff4d027bd2033e27fa8f4166e10af2f5a28ef1b98a"]
+  },
+  {
+    "title": "Citation number still linked as a version",
+    "body": "Candidate 007 corrects both scikit-learn sentiments from positive to not expressed. Both 006 and 007 still attach citation number 2 as a version to both names. Softcite misses both names. This needs version-span and owner-link negative examples; sentiment improvement alone does not make the complete rows correct.",
+    "provenance": "Frozen provisional references and saved 006/007/Softcite outputs; no version reference exists in this passage.",
+    "scope": "scored_population",
+    "review_kind": "agent_provisional",
+    "document_ids": ["openalex-snippet:f5b91139cf6004141eac2f6601085ecdc4f4163503ebc3e8209a79407ebfb96d"]
+  },
+  {
+    "title": "Trademark boundary: Softcite is exact",
+    "body": "Candidates 006 and 007 predict ImageJ® at 29–36, but the reviewed software name is ImageJ at 29–35. Softcite gets that boundary right. The same token-boundary limitation excluded two new Design Expert training occurrences. Address the decoder/tokenizer limitation without expanding reference names to include trademark glyphs.",
+    "provenance": "Exact-boundary reference, saved predictions and the separate data006 tokenizer-exclusion audit.",
+    "scope": "scored_population",
+    "review_kind": "agent_provisional",
+    "document_ids": ["openalex-snippet:03d2326e6e022fdc4b135208e219785f17566ad0ca56d0c228f6d84060314d7d"]
+  }
+]
