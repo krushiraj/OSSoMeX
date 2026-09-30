@@ -107,6 +107,8 @@ def test_human_metrics_do_not_inherit_provisional_scores(tmp_path, pipeline_fact
     assert not data['documents'][0]['reference_spans']
     assert not data['documents'][0]['reference_links']
     assert not any('names 0 correct' in line for line in data['documents'][0]['summaries'])
+    assert all('No scored reference coverage' in lines[0]
+               for lines in data['section_summaries'].values())
 
 
 def test_cli_regenerates_report_without_loading_models(tmp_path, pipeline_factory, capsys):
@@ -177,3 +179,38 @@ def test_failed_operational_arm_is_not_reported_ready(tmp_path):
     build_link_report(tmp_path / 'run', path, [], tmp_path / 'links')
     data = build(tmp_path)
     assert next(m for m in data['models'] if m['arm_id'] == '../../b')['status'] == 'partial'
+
+
+def test_zero_positive_references_do_not_produce_a_winner_summary(tmp_path, pipeline_factory):
+    artifacts(tmp_path, pipeline_factory)
+    from research.comparison.html_report import build_html_report
+    from research.comparison.link_report import build_link_report
+    from research.comparison.report import build_report
+    refs = tmp_path / 'no-version-refs.jsonl'
+    reference = json.loads((tmp_path / 'references.jsonl').read_text())
+    reference['spans'] = [s for s in reference['spans'] if s['label'] == 'SOFTWARE']
+    reference['version_links'] = []
+    reference['ignored_versions'] = []
+    refs.write_text(json.dumps(reference) + '\n')
+    build_report(tmp_path / 'run', tmp_path / 'no-version-spans', references=refs)
+    build_link_report(tmp_path / 'run', refs, ['full-004=' + str(tmp_path / 'full.jsonl')],
+                      tmp_path / 'no-version-links')
+    data = build_html_report(tmp_path / 'run', tmp_path / 'no-version-spans',
+                             [tmp_path / 'no-version-links'], tmp_path / 'html')
+    for field in ('version', 'links'):
+        summary = ' '.join(data['section_summaries'][field])
+        assert 'No positive reference support' in summary
+        assert 'Highest observed F1' not in summary
+        assert 'false positives' in summary
+    assert 'Highest observed F1' in data['section_summaries']['software'][0]
+
+
+def test_checked_absence_is_not_reported_as_missing_coverage():
+    from research.comparison.html_report import _summary
+    metric = {'tp': 0, 'fp': 0, 'fn': 0, 'precision': None, 'recall': None, 'f1': None}
+    models = [{'arm_id': 'quiet-pipeline', 'kind': 'pipeline', 'metrics': {'version': metric}},
+              {'arm_id': 'unsupported', 'kind': 'base', 'metrics': {'version': None}}]
+    summary = ' '.join(_summary(models, 'version'))
+    assert 'No positive reference support' in summary
+    assert 'quiet-pipeline: 0 exact matches, 0 false positives, 0 missed references.' in summary
+    assert 'No scored reference coverage' not in summary

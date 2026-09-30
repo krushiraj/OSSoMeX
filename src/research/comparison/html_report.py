@@ -56,13 +56,19 @@ def _compact_identity(identity):
     return result
 
 
-def _summary(models, field):
-    eligible = [m for m in models if m['metrics'][field] and m['metrics'][field]['f1'] is not None]
-    if not eligible:
+def _summary(models, field, *, has_coverage=True):
+    if not has_coverage:
         return ['No scored reference coverage for this field and review kind; N/A is not zero accuracy.']
-    best = max(m['metrics'][field]['f1'] for m in eligible)
-    winners = [m['arm_id'] for m in eligible if m['metrics'][field]['f1'] == best]
-    lines = [f"Highest observed F1 on this diagnostic subset: {', '.join(winners)} ({best:.1%}). This is not a held-out winner claim."]
+    eligible = [m for m in models if m['metrics'][field] and m['metrics'][field]['tp'] is not None]
+    if not eligible:
+        return ['No supported scores for this field; N/A is not zero accuracy.']
+    if not any(m['metrics'][field]['tp'] + m['metrics'][field]['fn'] for m in eligible):
+        lines = ['No positive reference support for this field; recall cannot be estimated and no F1 ranking is meaningful. Compare false positives only.']
+    else:
+        ranked = [m for m in eligible if m['metrics'][field]['f1'] is not None]
+        best = max(m['metrics'][field]['f1'] for m in ranked)
+        winners = [m['arm_id'] for m in ranked if m['metrics'][field]['f1'] == best]
+        lines = [f"Highest observed F1 on this diagnostic subset: {', '.join(winners)} ({best:.1%}). This is not a held-out winner claim."]
     for model in eligible:
         metric = model['metrics'][field]
         if model['kind'] in ('pipeline', 'softcite'):
@@ -518,7 +524,10 @@ def build_html_report(run, spans, links, output, *, appendix=None, notes=None,
                             'Intent, sentiment, aliases and confidence calibration have not been scored here.',
                             'Timing is engineering context only: span detector and remote/local service paths are not equivalent to full-label pipelines.'],
             'models': models, 'documents': presentation,
-            'section_summaries': {f: _summary(models, f) for f in ('software', 'version', 'links')},
+            'section_summaries': {f: _summary(models, f, has_coverage=any(
+                d['link_coverage'] if f == 'links' else
+                [r for r in d['coverage'] if r['label'] == f.upper()]
+                for d in presentation)) for f in ('software', 'version', 'links')},
             'feedback': feedback, 'appendix': appendix_data,
             'scored_references': {'spans': span_scores, 'links': link_scores}}
     if timing_rows:
