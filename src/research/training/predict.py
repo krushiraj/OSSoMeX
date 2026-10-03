@@ -7,6 +7,7 @@ import torch
 from transformers import AutoTokenizer, BertForTokenClassification
 
 from ..data.manifest import digest, verified_path
+from .boundary import boundary_repair_policy, repair_spans
 from .decode import decode_bio, decode_wordpiece, inference_decoder, stitch_logits
 from .features import LABELS, build_token_features
 from .runner import CAPABILITIES, choose_device
@@ -17,6 +18,7 @@ class Detector:
         checkpoint = Path(checkpoint)
         manifest = json.loads((checkpoint / 'manifest.json').read_bytes())
         self.decoder = inference_decoder(manifest)
+        self.boundary_repair = boundary_repair_policy(manifest)
         if (manifest.get('schema_version') != 'detector-checkpoint-1' or manifest.get('status') != 'trained_experimental'
                 or manifest.get('training', {}).get('optimizer_steps', 0) < 1 or manifest.get('labels') != LABELS
                 or manifest.get('capabilities') != CAPABILITIES):
@@ -74,4 +76,8 @@ class Detector:
         decoded = (decode_wordpiece(logits, offsets, features['word_ids']) if self.decoder == 'wordpiece-bio-v1'
                    else decode_bio(ids.tolist(), offsets, scores.tolist()))
         spans = [{**span, 'text': text[span['start']:span['end']]} for span in decoded]
-        return {**result, 'status': 'success' if spans else 'no_mentions', 'spans': spans}
+        decoded_spans = [{**span} for span in spans]
+        spans, repairs = repair_spans(text, spans, self.boundary_repair)
+        return {**result, 'status': 'success' if spans else 'no_mentions', 'spans': spans,
+                'boundary_repair': self.boundary_repair, 'decoded_spans': decoded_spans,
+                'boundary_repairs': repairs}

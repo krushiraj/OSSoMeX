@@ -20,6 +20,7 @@
     "review_required": {"const": true},
     "review_reasons": {"$ref": "#/$defs/reasons"},
     "evidence_method": {"const": "model_input_context"},
+    "boundary_repair": {"enum": ["none", "software-span-rules-v1"]},
     "stage_status": {
       "type": "object", "additionalProperties": false,
       "required": ["detector", "linker", "intent", "sentiment", "alias"],

@@ -4,14 +4,16 @@ import math
 
 import torch
 
+from .boundary import boundary_repair_policy
 from .features import LABELS, _owner
 
 
 def inference_decoder(manifest):
     policy = manifest.get('inference', {'decoder': 'greedy-bio-v1'})
-    if (not isinstance(policy, dict) or set(policy) != {'decoder'}
+    if (not isinstance(policy, dict) or not {'decoder'} <= set(policy) or set(policy) - {'decoder', 'boundary_repair'}
             or policy['decoder'] not in ('greedy-bio-v1', 'wordpiece-bio-v1')):
         raise ValueError('invalid inference decoder')
+    boundary_repair_policy(manifest)
     return policy['decoder']
 
 

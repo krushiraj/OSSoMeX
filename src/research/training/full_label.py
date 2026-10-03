@@ -13,6 +13,7 @@ from ..contracts import (INTENT_BITS, check_span, export_public, occurrence_id,
 from ..data.jats import sentence_regions
 from ..data.manifest import digest
 from .attribute_features import SENTIMENT_LABELS, STAGES, build_inference_candidates
+from .boundary import NONE as BOUNDARY_NONE
 from .full_label_train import AttributeCheckpoint, batch_attribute_features, load_pipeline_manifest
 from .predict import Detector
 
@@ -96,6 +97,7 @@ class FullLabelPipeline:
             'label_support': {stage: deepcopy(entry.get('support')) for stage, entry in self.manifest['stages'].items()},
             'scores_calibrated': False, 'quality_evaluated': False, 'review_required': True,
             'review_reasons': list(WARNINGS), 'evidence_method': 'model_input_context',
+            'boundary_repair': BOUNDARY_NONE,
             'stage_status': {}, 'detector_diagnostics': None, 'field_predictions': [],
             'occurrences': [], 'pair_predictions': {'linker': []}, 'alias_predictions': {'pairs': [], 'groups': []},
             'public_rows': [], 'public_mappings': [], 'exclusions': [],
@@ -164,6 +166,11 @@ class FullLabelPipeline:
         except Exception as exc:
             return self.failure_result(document, exc)
         result['detector_diagnostics'] = deepcopy(detected)
+        result['boundary_repair'] = detected.get('boundary_repair', BOUNDARY_NONE)
+        if detected.get('boundary_repairs'):
+            # A repaired boundary is a rule's opinion, not the encoder's, so it
+            # is always handed to review instead of being presented as a clean hit.
+            result['review_reasons'].append('boundary_repaired')
         detector_ok = detected['status'] in ('success', 'no_mentions') and all(
             chunk.get('status') == 'success' for chunk in detected.get('chunks', []))
         result['stage_status']['detector'] = _stage('success' if detector_ok else 'failed',

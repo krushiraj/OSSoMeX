@@ -1,0 +1,61 @@
+{
+  "schema_version": "ossomex-model-registry-1",
+  "release": "0.0.1",
+  "hosted_weights": false,
+  "models": [
+    {
+      "id": "scibert-full-label-006",
+      "role": "selected name-extraction POC",
+      "manifest_sha256": "fe92420fff8a57b078c3b210fc5312c1a65d599dfc850a479ce266dafb689f8d",
+      "stages": {
+        "alias": {
+          "path": "../scibert-alias-003",
+          "manifest_sha256": "ea9eb15b7778eb0c037d03d18284ca127db4c817cb55b881b4bc2f60e81fc5ed"
+        },
+        "detector": {
+          "path": "../scibert-detector-005-wordpiece",
+          "manifest_sha256": "3821c9781f9105df8a8cc958ee0cff7c5ddbfe5689fc83ba47149ef25807a744"
+        },
+        "intent": {
+          "path": "../scibert-intent-003",
+          "manifest_sha256": "63c707b3a604fa5c4f65f58c0a5e88f3ed13bdd5f27a39f1f66a9d98cfe72d97"
+        },
+        "linker": {
+          "path": "../scibert-linker-004",
+          "manifest_sha256": "227353dc782eb0fa892ffd944f6674c0328e563f9b24bf60a91894070c557d32"
+        },
+        "sentiment": {
+          "path": "../scibert-sentiment-003",
+          "manifest_sha256": "90b5972cb0fb73dee624175529381a34adc2605be9c316618b8b00dcef15c0a2"
+        }
+      }
+    },
+    {
+      "id": "scibert-full-label-012",
+      "role": "experimental Softcite adaptation",
+      "manifest_sha256": "67decb629e51bc3d452debb404d91410bfa16ad31aa1e10f294d4479d533945a",
+      "stages": {
+        "alias": {
+          "path": "../scibert-alias-003",
+          "manifest_sha256": "ea9eb15b7778eb0c037d03d18284ca127db4c817cb55b881b4bc2f60e81fc5ed"
+        },
+        "detector": {
+          "path": "../scibert-detector-012-softcite-wordpiece",
+          "manifest_sha256": "62a4c9befcf51e71b7c3798af6c215080468aa1a68e57e7a4f6a457305ed6158"
+        },
+        "intent": {
+          "path": "../scibert-intent-003",
+          "manifest_sha256": "63c707b3a604fa5c4f65f58c0a5e88f3ed13bdd5f27a39f1f66a9d98cfe72d97"
+        },
+        "linker": {
+          "path": "../scibert-linker-004",
+          "manifest_sha256": "227353dc782eb0fa892ffd944f6674c0328e563f9b24bf60a91894070c557d32"
+        },
+        "sentiment": {
+          "path": "../scibert-sentiment-003",
+          "manifest_sha256": "90b5972cb0fb73dee624175529381a34adc2605be9c316618b8b00dcef15c0a2"
+        }
+      }
+    }
+  ]
+}

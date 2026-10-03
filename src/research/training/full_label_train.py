@@ -408,21 +408,25 @@ def _pipeline_capabilities(stages):
     return capabilities
 
 
-def publish_detector_decoder(source: Path, output: Path, decoder: str, *, allow_plumbing=False) -> dict:
+def publish_detector_decoder(source: Path, output: Path, decoder: str, *, boundary_repair=None,
+                            allow_plumbing=False) -> dict:
     """Copy verified weights into a distinct, inference-only checkpoint variant."""
     source, output = Path(source), Path(output)
-    inference_decoder({'inference': {'decoder': decoder}})
+    inference_policy = {'decoder': decoder}
+    if boundary_repair is not None:
+        inference_policy['boundary_repair'] = boundary_repair
+    inference_decoder({'inference': inference_policy})
     if os.path.lexists(output):
         raise FileExistsError(output)
     parent_hash = digest((source / 'manifest.json').read_bytes())
     manifest = verify_stage_checkpoint(source, 'detector', allow_plumbing=allow_plumbing)
     if digest((source / 'manifest.json').read_bytes()) != parent_hash:
         raise ValueError('changed detector manifest during verification')
-    manifest['inference'] = {'decoder': decoder}
+    manifest['inference'] = inference_policy
     manifest['inference_provenance'] = {'parent_manifest_sha256': parent_hash,
         'parent_checkpoint': str(source.resolve()), 'weights_retrained': False,
         'code_files': [{'path': name, 'sha256': digest(Path(__file__).with_name(name).read_bytes())}
-                       for name in ('decode.py', 'features.py', 'predict.py')]}
+                       for name in ('boundary.py', 'decode.py', 'features.py', 'predict.py')]}
     output.mkdir(parents=True, exist_ok=False)
     for record in manifest['files']:
         payload = verified_path(source, record).read_bytes()

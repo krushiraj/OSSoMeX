@@ -1,0 +1,13 @@
+{
+  "schema_version": "comparison-config-1",
+  "tokenizer_checkpoint": "checkpoints/scibert-detector-005-wordpiece",
+  "max_content_tokens": 480,
+  "overlap_tokens": 64,
+  "warmup_text": "We used NumPy.",
+  "arms": [
+    {"arm_id": "ossomex-detector-005", "backend": "scibert", "config": {"checkpoint": "checkpoints/scibert-detector-005-wordpiece", "device": "mps"}},
+    {"arm_id": "ossomex-detector-005-repaired", "backend": "scibert", "config": {"checkpoint": "checkpoints/scibert-detector-005-wordpiece-repaired", "device": "mps"}},
+    {"arm_id": "softcite-0.8.1", "backend": "softcite", "config_path": "configs/scibert/softcite-comparison-003.json"},
+    {"arm_id": "softcite-scibert-0.8.1", "backend": "softcite", "config_path": "configs/scibert/softcite-scibert-comparison-001.json"}
+  ]
+}

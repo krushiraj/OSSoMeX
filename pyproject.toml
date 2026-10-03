@@ -1,18 +1,27 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "research"
-version = "0.1.0"
+version = "0.0.1"
 description = "OSSoMeX - Open Source Software Mention Extractor research harness"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md"]
 requires-python = ">=3.11"
 dependencies = [
     "requests>=2.31",
     "jsonschema>=4.20",
 ]
 
+[project.urls]
+Repository = "https://github.com/krushiraj/OSSoMeX"
+Documentation = "https://github.com/krushiraj/OSSoMeX/tree/main/docs"
+Issues = "https://github.com/krushiraj/OSSoMeX/issues"
+
 [project.optional-dependencies]
+reports = ["Markdown>=3,<4", "matplotlib>=3.8,<4", "reportlab>=4,<5"]
 dev = ["pytest>=8,<10", "pytest-playwright>=0.5,<1"]
 interactive = ["prompt_toolkit==3.0.52"]
 ml = [

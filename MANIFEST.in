@@ -1,0 +1,25 @@
+include README.md LICENSE NOTICE THIRD_PARTY_NOTICES.md CITATION.cff CHANGELOG.md CONTRIBUTING.md ROADMAP.md
+include requirements-scibert.lock requirements-scibert-dev.lock protocol.html approvals.json
+recursive-include docs *.md *.json *.html
+recursive-include schemas *.json
+recursive-include configs *.json *.yml *.yaml *.jsonl
+recursive-include examples *.py *.txt *.json *.jsonl
+recursive-include models *.json *.sha256
+recursive-include scripts *.py
+recursive-include experiments *.py *.md *.json
+recursive-include prompts *.md *.txt *.json
+include annotations/annotation_policy.md
+include annotations/scibert-v2/policy-2.1-d17.md
+include annotations/scibert-v2/policy-2.1.md
+include annotations/scibert-v2/policy.md
+include annotations/scibert-v2/scope-2026-09-24.md
+include annotations/scibert-v2/url-scope-2026-09-25.md
+prune checkpoints
+prune data
+prune reports
+prune runs
+prune deliverables
+prune output
+prune artifacts
+prune tmp
+global-exclude __pycache__ *.py[cod] .DS_Store

@@ -43,3 +43,7 @@ scripts/software_mentions.json
 *.safetensors
 *.pt
 *.bin
+
+# Local model handoff contents extracted beside the checkout.
+/MODEL_BUNDLE.json
+/bundle-notices/

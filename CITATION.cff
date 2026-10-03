@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+message: "If you use OSSoMeX, cite this software and the SciBERT paper."
+title: "OSSoMeX: Open Source Software Mention Extractor"
+type: software
+version: 0.0.1
+date-released: 2026-10-04
+authors:
+  - family-names: Tula
+    given-names: Krushi Raj
+repository-code: "https://github.com/krushiraj/OSSoMeX"
+abstract: "Experimental software-mention extraction, version linking, intent, sentiment and local alias proposals for research text."
+license: Apache-2.0

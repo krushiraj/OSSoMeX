@@ -1,0 +1,158 @@
+{
+  "experiments/archive/threeway-012-2026-10-02/alias_diagnostic.py": {
+    "original": "reports/scibert-v2/threeway-012-2026-10-02/alias_diagnostic.py",
+    "sha256": "79747d7b4aa28640d1c80103e0c6b85bf345993381555508712c447c1a3b3322"
+  },
+  "experiments/archive/threeway-012-2026-10-02/audit_training_labels.py": {
+    "original": "reports/scibert-v2/threeway-012-2026-10-02/audit_training_labels.py",
+    "sha256": "e95ea2d0cdc48d702a136229e32997dcefd6954c506bc6462f3f74e5fad99fd4"
+  },
+  "experiments/archive/threeway-012-2026-10-02/build_error_viewer.py": {
+    "original": "reports/scibert-v2/threeway-012-2026-10-02/build_error_viewer.py",
+    "sha256": "a1c48f145adac8b9e5b780e3a93e4f7fcb41d963f7483acddb93913c1c3f4a4f"
+  },
+  "experiments/archive/threeway-012-2026-10-02/build_examples.py": {
+    "original": "reports/scibert-v2/threeway-012-2026-10-02/build_examples.py",
+    "sha256": "88d01ba406eb697fad1417ea2eee4fbb0670966a77996340fca5688abebd247b"
+  },
+  "experiments/archive/threeway-012-2026-10-02/build_report.py": {
+    "original": "reports/scibert-v2/threeway-012-2026-10-02/build_report.py",
+    "sha256": "9b4400817f87639a21261992b65ef240700df0d5f335ca4a53e7f70c184aac0c"
+  },
+  "experiments/archive/threeway-012-2026-10-02/check_harness.py": {
+    "original": "reports/scibert-v2/threeway-012-2026-10-02/check_harness.py",
+    "sha256": "7209fca5935402920409d22584f627003173b782d8ff3655cc0fba078c0ed627"
+  },
+  "experiments/archive/threeway-012-2026-10-02/diagnostics.py": {
+    "original": "reports/scibert-v2/threeway-012-2026-10-02/diagnostics.py",
+    "sha256": "1acefbd15886f8301be3dcf12c15674e0d841928ff2686c91627c5582d8cf6ca"
+  },
+  "experiments/archive/threeway-012-2026-10-02/finalize.py": {
+    "original": "reports/scibert-v2/threeway-012-2026-10-02/finalize.py",
+    "sha256": "788bf19cdbf884148db0589441049935a56007c7debf818ceed177cab02f89c2"
+  },
+  "experiments/archive/threeway-012-2026-10-02/jsonl_io.py": {
+    "original": "reports/scibert-v2/threeway-012-2026-10-02/jsonl_io.py",
+    "sha256": "d575f34727c3f073f6a9a869ed08c157c587d1ab932c1d0bfdbad2d49cd72608"
+  },
+  "experiments/archive/threeway-012-2026-10-02/plot_results.py": {
+    "original": "reports/scibert-v2/threeway-012-2026-10-02/plot_results.py",
+    "sha256": "adac6e4d8be0747ea466add726e4838f0c4d869fe9175f047287d18eb1aa700d"
+  },
+  "experiments/archive/threeway-012-2026-10-02/prepare_corrected.py": {
+    "original": "reports/scibert-v2/threeway-012-2026-10-02/prepare_corrected.py",
+    "sha256": "c360cfd677a5e7b27461b7873ba972b02fe44a410f41760a4fd873c033f9d94e"
+  },
+  "experiments/archive/threeway-012-2026-10-02/probe_offsets.py": {
+    "original": "reports/scibert-v2/threeway-012-2026-10-02/probe_offsets.py",
+    "sha256": "a7b3135a8332b140bc8a7ded828a5a97574e60b256052d9f8ac9225c83eaffe2"
+  },
+  "experiments/archive/threeway-012-2026-10-02/run.py": {
+    "original": "reports/scibert-v2/threeway-012-2026-10-02/run.py",
+    "sha256": "7d5b12b7b68063afac64a4c6e8f8b179e6833bdf9f06f24cab4a669b24c54d4b"
+  },
+  "experiments/archive/threeway-012-2026-10-02/run_corrected.py": {
+    "original": "reports/scibert-v2/threeway-012-2026-10-02/run_corrected.py",
+    "sha256": "4d1fc4c1ab2a831c1a9c534c61fde648d504f94be1527fd663284312a784b3b1"
+  },
+  "experiments/archive/threeway-012-2026-10-02/run_remaining.py": {
+    "original": "reports/scibert-v2/threeway-012-2026-10-02/run_remaining.py",
+    "sha256": "031772e9d001a12096cd77951b67027112b5ec7807eecc8bcb795511011d5992"
+  },
+  "experiments/archive/threeway-012-2026-10-02/run_whitespace_control.py": {
+    "original": "reports/scibert-v2/threeway-012-2026-10-02/run_whitespace_control.py",
+    "sha256": "d57f264e71142f9cc0a87c1c225961291c55288868f50f3750bd31132ac9f70d"
+  },
+  "experiments/archive/threeway-012-2026-10-02/score.py": {
+    "original": "reports/scibert-v2/threeway-012-2026-10-02/score.py",
+    "sha256": "162600a3fa3f492906e3ad07677d45a213fad552c6eb1eb334d7d40c702b0929"
+  },
+  "experiments/archive/threeway-012-2026-10-02/score_whitespace_canonical.py": {
+    "original": "reports/scibert-v2/threeway-012-2026-10-02/score_whitespace_canonical.py",
+    "sha256": "e5f0dd5606095bb2853bb99f6aebda6631c7dc4cd987c655361f9b89133b0007"
+  },
+  "experiments/archive/threeway-012-2026-10-02/surface_diagnostic.py": {
+    "original": "reports/scibert-v2/threeway-012-2026-10-02/surface_diagnostic.py",
+    "sha256": "b2cdfe4003b95142f1eaf4d4a6f458ed6c8a2d0da0340799bcb8610c8a35eac5"
+  },
+  "experiments/archive/threeway-012-2026-10-02/timing_cpu.py": {
+    "original": "reports/scibert-v2/threeway-012-2026-10-02/timing_cpu.py",
+    "sha256": "e059e18cdb7b76349802534f4476a4864b59da82c4392103092bff52e93fbd89"
+  },
+  "experiments/archive/threeway-012-2026-10-02/verify_run.py": {
+    "original": "reports/scibert-v2/threeway-012-2026-10-02/verify_run.py",
+    "sha256": "59d3ad40b0c3c318bca9a76c1fd290842765305ce30eb15884b7386d19e9536f"
+  },
+  "experiments/archive/softcite-gold-001/add_detector_support.py": {
+    "original": "reports/scibert-v2/softcite-gold-001/scripts/add_detector_support.py",
+    "sha256": "693af2027625f1d65fd75d7588e14e410b07ad9ea6ccc91cc597f9a38e606570"
+  },
+  "experiments/archive/softcite-gold-001/bench_speed.py": {
+    "original": "reports/scibert-v2/softcite-gold-001/scripts/bench_speed.py",
+    "sha256": "763fa6524e951d7d0b5451cf65a4a1f183742af26d69cb0d24547fb82ae33c19"
+  },
+  "experiments/archive/softcite-gold-001/build_dataset.py": {
+    "original": "reports/scibert-v2/softcite-gold-001/scripts/build_dataset.py",
+    "sha256": "2931b85c15548e45411091d4e688ceafdc647c24ad7130f66561aec61508839f"
+  },
+  "experiments/archive/softcite-gold-001/build_paragraph_dataset.py": {
+    "original": "reports/scibert-v2/softcite-gold-001/scripts/build_paragraph_dataset.py",
+    "sha256": "8882e21a67bc7e259bcde4925036a5103b80c491d1a4e0f6abdbd5e4a4aab257"
+  },
+  "experiments/archive/softcite-gold-001/compare_models.py": {
+    "original": "reports/scibert-v2/softcite-gold-001/scripts/compare_models.py",
+    "sha256": "6d0e37d0f6822a37297bd1cb5aea4aab0afaba125606db53877d7147af8931ba"
+  },
+  "experiments/archive/softcite-gold-001/compare_ui.py": {
+    "original": "reports/scibert-v2/softcite-gold-001/scripts/compare_ui.py",
+    "sha256": "7d5a31ee681a235375f87038644ca43ca8131e463e9e4203b507d345956a063c"
+  },
+  "experiments/archive/softcite-gold-001/extract_gold.py": {
+    "original": "reports/scibert-v2/softcite-gold-001/scripts/extract_gold.py",
+    "sha256": "20ccf48350847ffdc48915fe75b881a886ea73ad4931315de36122c75da5dbcc"
+  },
+  "experiments/archive/softcite-gold-001/extract_paragraphs.py": {
+    "original": "reports/scibert-v2/softcite-gold-001/scripts/extract_paragraphs.py",
+    "sha256": "506663e609131113d03fbebd5a19db7fffc9b64d855cffa70008e7aa10792294"
+  },
+  "experiments/archive/softcite-gold-001/fetch_softcite.py": {
+    "original": "reports/scibert-v2/softcite-gold-001/scripts/fetch_softcite.py",
+    "sha256": "4965af043f1c3a4fb07b4ad1b17ec42aa9109b832cd823af65616cb720f0fe7a"
+  },
+  "experiments/archive/softcite-gold-001/fulltext_recall.py": {
+    "original": "reports/scibert-v2/softcite-gold-001/scripts/fulltext_recall.py",
+    "sha256": "1866ff1c0c0f14839abdb0199b1a13a330eeb5ef0ed2bb20cefe3c38c5355f11"
+  },
+  "experiments/archive/softcite-gold-001/make_bundle.py": {
+    "original": "reports/scibert-v2/softcite-gold-001/scripts/make_bundle.py",
+    "sha256": "d7645c93738ae2abb5d791e3e6cfb351927bc7fd482f062f57b72d57b4ff8f0d"
+  },
+  "experiments/archive/softcite-gold-001/name_overlap.py": {
+    "original": "reports/scibert-v2/softcite-gold-001/scripts/name_overlap.py",
+    "sha256": "33fff5a903e6960c4f18df648f62481eac088424abafc0e39618258ae9a55942"
+  },
+  "experiments/archive/softcite-gold-001/regress.py": {
+    "original": "reports/scibert-v2/softcite-gold-001/scripts/regress.py",
+    "sha256": "3c71385ed2d0efa866824eabb69d73cd94800ebf75661a56dce9fff043577f13"
+  },
+  "experiments/archive/softcite-gold-001/score.py": {
+    "original": "reports/scibert-v2/softcite-gold-001/scripts/score.py",
+    "sha256": "b7ba743518c9dc9300c7ac50156d9dc7c62a8e040c4a632933f57d42d357cc46"
+  },
+  "experiments/archive/softcite-gold-001/score_one.py": {
+    "original": "reports/scibert-v2/softcite-gold-001/scripts/score_one.py",
+    "sha256": "fa7fd3aa5cb58195ebf95a5e05beaa382e9e5fb1702faa06a9af3358ddec96f3"
+  },
+  "experiments/archive/softcite-gold-001/seen_unseen_breakdown.py": {
+    "original": "reports/scibert-v2/softcite-gold-001/scripts/seen_unseen_breakdown.py",
+    "sha256": "cb94e8cceec37db4eb28a363f53e835dd08ed97755ce9732a0d2d416d2aa45ad"
+  },
+  "experiments/archive/softcite-gold-001/softcite_losses.py": {
+    "original": "reports/scibert-v2/softcite-gold-001/scripts/softcite_losses.py",
+    "sha256": "c30c53f10df8b8910d6b5e4d16e5b86bad7e9ed99bc2d64e79cdbbc68275955d"
+  },
+  "experiments/archive/softcite-gold-001/train_detector.py": {
+    "original": "reports/scibert-v2/softcite-gold-001/scripts/train_detector.py",
+    "sha256": "393e3eaab5372d40273867d94c11759ba95de1f407147fd143de83f1f83859db"
+  }
+}
