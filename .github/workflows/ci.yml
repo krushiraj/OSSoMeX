@@ -14,7 +14,18 @@ jobs:
       - name: Install contributor dependencies
         run: |
           python -m pip install -r requirements-scibert-dev.lock
-          python -m pip install --no-deps -e .
+          python -m pip install torch==2.14.0 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -e '.[dev,ml,interactive]'
+          python -m pip check
+          python -m pip freeze > ci-environment.txt
           python -m playwright install --with-deps chromium
       - name: Run tests
-        run: python -m pytest tests
+        run: python -m pytest tests --junitxml=ci-tests.xml
+      - name: Save verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: contributor-checks
+          path: |
+            ci-environment.txt
+            ci-tests.xml
