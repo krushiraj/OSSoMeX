@@ -20,7 +20,7 @@ jobs:
           python -m pip freeze > ci-environment.txt
           python -m playwright install --with-deps chromium
       - name: Run tests
-        run: python -m pytest tests --junitxml=ci-tests.xml
+        run: python -m pytest tests -rs -o junit_family=xunit1 --junitxml=ci-tests.xml
       - name: Save verification evidence
         if: always()
         uses: actions/upload-artifact@v4

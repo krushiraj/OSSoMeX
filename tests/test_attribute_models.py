@@ -19,7 +19,7 @@ def inputs():
 
 
 @pytest.mark.parametrize('stage,width', [('linker', 1), ('alias', 1), ('intent', 3), ('sentiment', 4)])
-def test_head_shape_safe_reload_and_nonzero_encoder_gradient(tmp_path, stage, width):
+def test_head_shape_safe_reload_and_nonzero_encoder_gradient(tmp_path, stage, width, record_property):
     from research.training.attribute_models import AttributeModel, build_attribute_model, attribute_loss
     torch.manual_seed(42)
     model = build_attribute_model(tiny_config(), stage).eval()
@@ -33,7 +33,13 @@ def test_head_shape_safe_reload_and_nonzero_encoder_gradient(tmp_path, stage, wi
     model.save_pretrained(tmp_path, safe_serialization=True)
     assert (tmp_path / 'model.safetensors').is_file()
     restored = AttributeModel.from_pretrained(tmp_path, local_files_only=True, use_safetensors=True).eval()
-    assert torch.equal(before.detach(), restored(**inputs()).logits.detach())
+    restored_state = restored.state_dict()
+    assert model.state_dict().keys() == restored_state.keys()
+    for name, value in model.state_dict().items():
+        assert torch.equal(value, restored_state[name]), name
+    after = restored(**inputs()).logits.detach()
+    record_property('max_reload_logit_delta', (before.detach() - after).abs().max().item())
+    torch.testing.assert_close(before.detach(), after, rtol=1e-6, atol=1e-8)
 
 
 @pytest.mark.parametrize('stage', ['linker', 'alias', 'intent', 'sentiment'])

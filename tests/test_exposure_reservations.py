@@ -365,6 +365,8 @@ def test_invalid_sources_cannot_silently_remove_reservations(tmp_path, malformat
 
 def test_all_eight_verified_seed_inputs_are_retained(tmp_path):
     root = Path(__file__).resolve().parents[1]
+    if not (root / 'data/scibert-v2/ecosystems-pilot-002/bundle').exists():
+        pytest.skip('retained local exposure source artifacts unavailable')
     config = json.loads((root / 'configs/scibert/exposures-001.json').read_bytes())
     config['inputs'] = [{**row, 'path': str(root / row['path'])} for row in config['inputs']]
     report = exposure.build_exposures(config, tmp_path / 'exposures')

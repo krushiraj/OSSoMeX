@@ -230,6 +230,8 @@ def test_frozen_collector_cache_replay_retains_existing_hashes_without_fetch(mon
     from research.data import ecosystems
     root=Path(__file__).resolve().parents[1]
     output=root/'data/scibert-v2/ecosystems-pilot-002'
+    if not output.exists():
+        pytest.skip('retained local collector artifacts unavailable')
     config=json.loads((output/'config.json').read_bytes())
     before=(output/'manifest.json').read_bytes()
     task_manifest=(output/'tasks/manifest.json').read_bytes()
