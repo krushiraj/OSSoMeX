@@ -7,7 +7,7 @@ from research.contracts import FIELDS
 
 
 def alias_item(case_id='design-explicit-icekat'):
-    path = Path(__file__).resolve().parents[1] / 'docs/plans/scibert-alias-examples.json'
+    path = Path(__file__).resolve().parents[1] / 'examples/scibert-alias-examples.json'
     case = next(c for c in json.loads(path.read_bytes())['cases'] if c['case_id'] == case_id)
     policy = {'policy_version': 'scibert-poc-2.1', 'policy_hash': 'a' * 64,
               'alias_schema_version': '1.0'}

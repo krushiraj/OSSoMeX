@@ -1,0 +1,625 @@
+{
+  "artifact_kind": "proposed_design_examples",
+  "research_eligible": false,
+  "alias_runtime_implemented": false,
+  "schema_version": "alias-design-1",
+  "cases": [
+    {
+      "case_id": "design-explicit-icekat",
+      "input": {
+        "document_id": "design-explicit-icekat",
+        "text": "We developed Interactive Continuous Enzyme Kinetics Analysis Tool (ICEKAT).",
+        "text_revision": "sha256:72aef167278baa06774701d69224a18d76fd273cca8a8223e282c0ad73a7b62d",
+        "annotation_region": {
+          "start": 0,
+          "end": 75
+        }
+      },
+      "expected_occurrences": [
+        {
+          "schema_version": "2.0",
+          "document_id": "design-explicit-icekat",
+          "text_revision": "sha256:72aef167278baa06774701d69224a18d76fd273cca8a8223e282c0ad73a7b62d",
+          "mention_id": "design-explicit-icekat|sha256:72aef167278baa06774701d69224a18d76fd273cca8a8223e282c0ad73a7b62d|13:65",
+          "name": "Interactive Continuous Enzyme Kinetics Analysis Tool",
+          "name_span": {
+            "start": 13,
+            "end": 65
+          },
+          "context_sentence": "We developed Interactive Continuous Enzyme Kinetics Analysis Tool (ICEKAT).",
+          "context_span": {
+            "start": 0,
+            "end": 75
+          },
+          "context_kind": "sentence",
+          "version_links": [],
+          "version_status": "absent",
+          "intents": [
+            "created"
+          ],
+          "sentiment": "not_expressed",
+          "known": {
+            "software": true,
+            "versions": true,
+            "created": true,
+            "used": true,
+            "shared": true,
+            "sentiment": true
+          },
+          "evidence": {
+            "intents": [
+              {
+                "start": 0,
+                "end": 75
+              }
+            ],
+            "sentiment": []
+          },
+          "review": {
+            "status": "synthetic_fixture",
+            "reasons": []
+          }
+        },
+        {
+          "schema_version": "2.0",
+          "document_id": "design-explicit-icekat",
+          "text_revision": "sha256:72aef167278baa06774701d69224a18d76fd273cca8a8223e282c0ad73a7b62d",
+          "mention_id": "design-explicit-icekat|sha256:72aef167278baa06774701d69224a18d76fd273cca8a8223e282c0ad73a7b62d|67:73",
+          "name": "ICEKAT",
+          "name_span": {
+            "start": 67,
+            "end": 73
+          },
+          "context_sentence": "We developed Interactive Continuous Enzyme Kinetics Analysis Tool (ICEKAT).",
+          "context_span": {
+            "start": 0,
+            "end": 75
+          },
+          "context_kind": "sentence",
+          "version_links": [],
+          "version_status": "absent",
+          "intents": [
+            "created"
+          ],
+          "sentiment": "not_expressed",
+          "known": {
+            "software": true,
+            "versions": true,
+            "created": true,
+            "used": true,
+            "shared": true,
+            "sentiment": true
+          },
+          "evidence": {
+            "intents": [
+              {
+                "start": 0,
+                "end": 75
+              }
+            ],
+            "sentiment": []
+          },
+          "review": {
+            "status": "synthetic_fixture",
+            "reasons": []
+          }
+        }
+      ],
+      "expected_public_records": [
+        {
+          "name": "Interactive Continuous Enzyme Kinetics Analysis Tool",
+          "context_sentence": "We developed Interactive Continuous Enzyme Kinetics Analysis Tool (ICEKAT).",
+          "intents": [
+            "created"
+          ],
+          "sentiment": "not_expressed",
+          "version": null
+        },
+        {
+          "name": "ICEKAT",
+          "context_sentence": "We developed Interactive Continuous Enzyme Kinetics Analysis Tool (ICEKAT).",
+          "intents": [
+            "created"
+          ],
+          "sentiment": "not_expressed",
+          "version": null
+        }
+      ],
+      "proposed_alias_annotations": {
+        "schema_version": "1.0",
+        "relations": [
+          {
+            "relation_id": "alias:21ce981a5d3b2bf07bbc1b07a3e3eb8b5d40519af5bdd981069a89d70675c71d",
+            "document_id": "design-explicit-icekat",
+            "text_revision": "sha256:72aef167278baa06774701d69224a18d76fd273cca8a8223e282c0ad73a7b62d",
+            "member_mention_ids": [
+              "design-explicit-icekat|sha256:72aef167278baa06774701d69224a18d76fd273cca8a8223e282c0ad73a7b62d|13:65",
+              "design-explicit-icekat|sha256:72aef167278baa06774701d69224a18d76fd273cca8a8223e282c0ad73a7b62d|67:73"
+            ],
+            "relation_type": "abbreviation",
+            "decision": "alias",
+            "preferred_mention_id": "design-explicit-icekat|sha256:72aef167278baa06774701d69224a18d76fd273cca8a8223e282c0ad73a7b62d|67:73",
+            "evidence_spans": [
+              {
+                "start": 0,
+                "end": 75
+              }
+            ],
+            "review": {
+              "status": "synthetic_fixture",
+              "reasons": [
+                "alias_link_review"
+              ]
+            }
+          }
+        ]
+      },
+      "expected_alias_groups": [
+        {
+          "local_entity_id": "local-software:21ce981a5d3b2bf07bbc1b07a3e3eb8b5d40519af5bdd981069a89d70675c71d",
+          "document_id": "design-explicit-icekat",
+          "text_revision": "sha256:72aef167278baa06774701d69224a18d76fd273cca8a8223e282c0ad73a7b62d",
+          "member_mention_ids": [
+            "design-explicit-icekat|sha256:72aef167278baa06774701d69224a18d76fd273cca8a8223e282c0ad73a7b62d|13:65",
+            "design-explicit-icekat|sha256:72aef167278baa06774701d69224a18d76fd273cca8a8223e282c0ad73a7b62d|67:73"
+          ],
+          "preferred_name": "ICEKAT",
+          "names": [
+            "Interactive Continuous Enzyme Kinetics Analysis Tool",
+            "ICEKAT"
+          ],
+          "quality": "synthetic_fixture"
+        }
+      ],
+      "expected_counts": {
+        "mention_count": 2,
+        "public_row_count": 2,
+        "resolved_alias_group_count": 1,
+        "checked_alias_positive_pairs": 1,
+        "checked_alias_negative_pairs": 0,
+        "unresolved_alias_pairs": 0
+      }
+    },
+    {
+      "case_id": "design-unknown-repeated-name",
+      "input": {
+        "document_id": "design-unknown-repeated-name",
+        "text": "We used the Orion package and compared its output with the Orion program.",
+        "text_revision": "sha256:0f255de5aa35865cfb888b2313c3a4ddf758fd0764e36de8b52716c57f322cf7",
+        "annotation_region": {
+          "start": 0,
+          "end": 73
+        }
+      },
+      "expected_occurrences": [
+        {
+          "schema_version": "2.0",
+          "document_id": "design-unknown-repeated-name",
+          "text_revision": "sha256:0f255de5aa35865cfb888b2313c3a4ddf758fd0764e36de8b52716c57f322cf7",
+          "mention_id": "design-unknown-repeated-name|sha256:0f255de5aa35865cfb888b2313c3a4ddf758fd0764e36de8b52716c57f322cf7|12:17",
+          "name": "Orion",
+          "name_span": {
+            "start": 12,
+            "end": 17
+          },
+          "context_sentence": "We used the Orion package and compared its output with the Orion program.",
+          "context_span": {
+            "start": 0,
+            "end": 73
+          },
+          "context_kind": "sentence",
+          "version_links": [],
+          "version_status": "absent",
+          "intents": [
+            "used"
+          ],
+          "sentiment": "not_expressed",
+          "known": {
+            "software": true,
+            "versions": true,
+            "created": true,
+            "used": true,
+            "shared": true,
+            "sentiment": true
+          },
+          "evidence": {
+            "intents": [
+              {
+                "start": 0,
+                "end": 73
+              }
+            ],
+            "sentiment": []
+          },
+          "review": {
+            "status": "synthetic_fixture",
+            "reasons": []
+          }
+        },
+        {
+          "schema_version": "2.0",
+          "document_id": "design-unknown-repeated-name",
+          "text_revision": "sha256:0f255de5aa35865cfb888b2313c3a4ddf758fd0764e36de8b52716c57f322cf7",
+          "mention_id": "design-unknown-repeated-name|sha256:0f255de5aa35865cfb888b2313c3a4ddf758fd0764e36de8b52716c57f322cf7|59:64",
+          "name": "Orion",
+          "name_span": {
+            "start": 59,
+            "end": 64
+          },
+          "context_sentence": "We used the Orion package and compared its output with the Orion program.",
+          "context_span": {
+            "start": 0,
+            "end": 73
+          },
+          "context_kind": "sentence",
+          "version_links": [],
+          "version_status": "absent",
+          "intents": [
+            "used"
+          ],
+          "sentiment": "not_expressed",
+          "known": {
+            "software": true,
+            "versions": true,
+            "created": true,
+            "used": true,
+            "shared": true,
+            "sentiment": true
+          },
+          "evidence": {
+            "intents": [
+              {
+                "start": 0,
+                "end": 73
+              }
+            ],
+            "sentiment": []
+          },
+          "review": {
+            "status": "synthetic_fixture",
+            "reasons": []
+          }
+        }
+      ],
+      "expected_public_records": [
+        {
+          "name": "Orion",
+          "context_sentence": "We used the Orion package and compared its output with the Orion program.",
+          "intents": [
+            "used"
+          ],
+          "sentiment": "not_expressed",
+          "version": null
+        },
+        {
+          "name": "Orion",
+          "context_sentence": "We used the Orion package and compared its output with the Orion program.",
+          "intents": [
+            "used"
+          ],
+          "sentiment": "not_expressed",
+          "version": null
+        }
+      ],
+      "proposed_alias_annotations": {
+        "schema_version": "1.0",
+        "relations": [
+          {
+            "relation_id": "alias:4cf4f409641cfe9d5e35aed1ec53409468f7a8ac91c402138e04ef21032e0452",
+            "document_id": "design-unknown-repeated-name",
+            "text_revision": "sha256:0f255de5aa35865cfb888b2313c3a4ddf758fd0764e36de8b52716c57f322cf7",
+            "member_mention_ids": [
+              "design-unknown-repeated-name|sha256:0f255de5aa35865cfb888b2313c3a4ddf758fd0764e36de8b52716c57f322cf7|12:17",
+              "design-unknown-repeated-name|sha256:0f255de5aa35865cfb888b2313c3a4ddf758fd0764e36de8b52716c57f322cf7|59:64"
+            ],
+            "relation_type": "explicit_alternative_name",
+            "decision": "unresolved",
+            "preferred_mention_id": null,
+            "evidence_spans": [
+              {
+                "start": 0,
+                "end": 73
+              }
+            ],
+            "review": {
+              "status": "synthetic_fixture",
+              "reasons": [
+                "alias_link_review"
+              ]
+            }
+          }
+        ]
+      },
+      "expected_alias_groups": [],
+      "expected_counts": {
+        "mention_count": 2,
+        "public_row_count": 2,
+        "resolved_alias_group_count": 0,
+        "checked_alias_positive_pairs": 0,
+        "checked_alias_negative_pairs": 0,
+        "unresolved_alias_pairs": 1
+      }
+    },
+    {
+      "case_id": "design-distinct-tools",
+      "input": {
+        "document_id": "design-distinct-tools",
+        "text": "We used AlphaPlot and BetaPlot, two different software packages.",
+        "text_revision": "sha256:05c70ef2dc0f65eebe291d49f7e35bc22dc85a4066b0f62c1df83c2d61b1bbe4",
+        "annotation_region": {
+          "start": 0,
+          "end": 64
+        }
+      },
+      "expected_occurrences": [
+        {
+          "schema_version": "2.0",
+          "document_id": "design-distinct-tools",
+          "text_revision": "sha256:05c70ef2dc0f65eebe291d49f7e35bc22dc85a4066b0f62c1df83c2d61b1bbe4",
+          "mention_id": "design-distinct-tools|sha256:05c70ef2dc0f65eebe291d49f7e35bc22dc85a4066b0f62c1df83c2d61b1bbe4|8:17",
+          "name": "AlphaPlot",
+          "name_span": {
+            "start": 8,
+            "end": 17
+          },
+          "context_sentence": "We used AlphaPlot and BetaPlot, two different software packages.",
+          "context_span": {
+            "start": 0,
+            "end": 64
+          },
+          "context_kind": "sentence",
+          "version_links": [],
+          "version_status": "absent",
+          "intents": [
+            "used"
+          ],
+          "sentiment": "not_expressed",
+          "known": {
+            "software": true,
+            "versions": true,
+            "created": true,
+            "used": true,
+            "shared": true,
+            "sentiment": true
+          },
+          "evidence": {
+            "intents": [
+              {
+                "start": 0,
+                "end": 64
+              }
+            ],
+            "sentiment": []
+          },
+          "review": {
+            "status": "synthetic_fixture",
+            "reasons": []
+          }
+        },
+        {
+          "schema_version": "2.0",
+          "document_id": "design-distinct-tools",
+          "text_revision": "sha256:05c70ef2dc0f65eebe291d49f7e35bc22dc85a4066b0f62c1df83c2d61b1bbe4",
+          "mention_id": "design-distinct-tools|sha256:05c70ef2dc0f65eebe291d49f7e35bc22dc85a4066b0f62c1df83c2d61b1bbe4|22:30",
+          "name": "BetaPlot",
+          "name_span": {
+            "start": 22,
+            "end": 30
+          },
+          "context_sentence": "We used AlphaPlot and BetaPlot, two different software packages.",
+          "context_span": {
+            "start": 0,
+            "end": 64
+          },
+          "context_kind": "sentence",
+          "version_links": [],
+          "version_status": "absent",
+          "intents": [
+            "used"
+          ],
+          "sentiment": "not_expressed",
+          "known": {
+            "software": true,
+            "versions": true,
+            "created": true,
+            "used": true,
+            "shared": true,
+            "sentiment": true
+          },
+          "evidence": {
+            "intents": [
+              {
+                "start": 0,
+                "end": 64
+              }
+            ],
+            "sentiment": []
+          },
+          "review": {
+            "status": "synthetic_fixture",
+            "reasons": []
+          }
+        }
+      ],
+      "expected_public_records": [
+        {
+          "name": "AlphaPlot",
+          "context_sentence": "We used AlphaPlot and BetaPlot, two different software packages.",
+          "intents": [
+            "used"
+          ],
+          "sentiment": "not_expressed",
+          "version": null
+        },
+        {
+          "name": "BetaPlot",
+          "context_sentence": "We used AlphaPlot and BetaPlot, two different software packages.",
+          "intents": [
+            "used"
+          ],
+          "sentiment": "not_expressed",
+          "version": null
+        }
+      ],
+      "proposed_alias_annotations": {
+        "schema_version": "1.0",
+        "relations": [
+          {
+            "relation_id": "alias:6dcb564d60be9d4fb71d91fcde5b62a159ac6afc7e6591b37defcdb2eb405bb2",
+            "document_id": "design-distinct-tools",
+            "text_revision": "sha256:05c70ef2dc0f65eebe291d49f7e35bc22dc85a4066b0f62c1df83c2d61b1bbe4",
+            "member_mention_ids": [
+              "design-distinct-tools|sha256:05c70ef2dc0f65eebe291d49f7e35bc22dc85a4066b0f62c1df83c2d61b1bbe4|22:30",
+              "design-distinct-tools|sha256:05c70ef2dc0f65eebe291d49f7e35bc22dc85a4066b0f62c1df83c2d61b1bbe4|8:17"
+            ],
+            "relation_type": "explicit_alternative_name",
+            "decision": "not_alias",
+            "preferred_mention_id": null,
+            "evidence_spans": [
+              {
+                "start": 0,
+                "end": 64
+              }
+            ],
+            "review": {
+              "status": "synthetic_fixture",
+              "reasons": [
+                "alias_link_review"
+              ]
+            }
+          }
+        ]
+      },
+      "expected_alias_groups": [],
+      "expected_counts": {
+        "mention_count": 2,
+        "public_row_count": 2,
+        "resolved_alias_group_count": 0,
+        "checked_alias_positive_pairs": 0,
+        "checked_alias_negative_pairs": 1,
+        "unresolved_alias_pairs": 0
+      }
+    },
+    {
+      "case_id": "design-negative",
+      "input": {
+        "document_id": "design-negative",
+        "text": "The samples were stored in CSV files on an NVIDIA GPU.",
+        "text_revision": "sha256:99981a50542f1dbdf15451632c1010466e1af263c52f045cc0f6cd471e4ffb67",
+        "annotation_region": {
+          "start": 0,
+          "end": 54
+        }
+      },
+      "expected_occurrences": [],
+      "expected_public_records": [],
+      "proposed_alias_annotations": {
+        "schema_version": "1.0",
+        "relations": []
+      },
+      "expected_alias_groups": [],
+      "expected_counts": {
+        "mention_count": 0,
+        "public_row_count": 0,
+        "resolved_alias_group_count": 0,
+        "checked_alias_positive_pairs": 0,
+        "checked_alias_negative_pairs": 0,
+        "unresolved_alias_pairs": 0
+      }
+    }
+  ],
+  "real_paper_definition": {
+    "artifact_kind": "planned_task_not_existing_annotation",
+    "document_id": "ecosystems:10.1186/s12859-020-3513-y",
+    "text_revision": "sha256:48fdbe13ac93aa8ee2a8150aa8123277adf3e50a3d3d01f7cf6435ec758d51e3",
+    "source_task_id": "task:0195bc236bd6c60af024ffce6b0d1546",
+    "source_context_span": {
+      "end": 1662,
+      "start": 841
+    },
+    "current_owned_region": {
+      "end": 1662,
+      "start": 1466
+    },
+    "proposed_owned_region": {
+      "start": 841,
+      "end": 1165
+    },
+    "proposed_input_text": "An Interactive Continuous Enzyme Kinetics Analysis Tool (ICEKAT) was developed for semi-automated calculation of initial rates from continuous enzyme kinetic traces with particular application to the evaluation of Michaelis-Menten and EC50/IC50 kinetic parameters, as well as the results of high-throughput screening assays.",
+    "proposed_name_spans": [
+      {
+        "name": "Interactive Continuous Enzyme Kinetics Analysis Tool",
+        "start": 844,
+        "end": 896
+      },
+      {
+        "name": "ICEKAT",
+        "start": 898,
+        "end": 904
+      }
+    ],
+    "preferred_display_name": "ICEKAT",
+    "existing_task_action": "preserve_unchanged",
+    "new_task_policy": "scibert-poc-2.1",
+    "text_license": "CC-BY-4.0",
+    "access_basis": {
+      "article_url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC7222511/fullTextXML",
+      "license_url": "http://creativecommons.org/licenses/by/4.0/",
+      "xml_sha256": "972f64f763b6368677e2ae536d36e11a4bbf6e00cf60a4571e55f1dd6a5e6a0c"
+    }
+  },
+  "rejection_examples": [
+    {
+      "case_id": "cross-document-endpoint",
+      "mutation": "Use a member_mention_id from a different document",
+      "expected": "Reject without writing a relation"
+    },
+    {
+      "case_id": "changed-text-revision",
+      "mutation": "Use an endpoint from an earlier text_revision",
+      "expected": "Reject without reattaching by matching name text"
+    },
+    {
+      "case_id": "unknown-endpoint",
+      "mutation": "Reference a context-only name with no owned occurrence",
+      "expected": "Reject; create an appropriately owned task first"
+    },
+    {
+      "case_id": "self-or-overlap",
+      "mutation": "Link an occurrence to itself or to an overlapping name span",
+      "expected": "Reject"
+    },
+    {
+      "case_id": "missing-evidence",
+      "mutation": "Submit empty or out-of-context evidence_spans",
+      "expected": "Reject"
+    },
+    {
+      "case_id": "delete-linked-member",
+      "mutation": "Remove or move a name span before removing its alias relation",
+      "expected": "Reject and ask reviewer to remove the relation first"
+    },
+    {
+      "case_id": "contradictory-component",
+      "mutation": "A connected alias component contains an explicit not_alias pair",
+      "expected": "Reject the contradictory update atomically"
+    },
+    {
+      "case_id": "equal-acronym-across-papers",
+      "mutation": "Merge two papers because both use the string ICEKAT",
+      "expected": "No merge"
+    },
+    {
+      "case_id": "api-symbol",
+      "mutation": "Use excluded function/class names as software endpoints",
+      "expected": "Do not create software occurrences or alias links"
+    }
+  ],
+  "ui_expectations": {
+    "before_reveal": "No proposed name highlights or alias suggestions.",
+    "revealed_empty": "No software mentions proposed in this owned sentence. Check for missed names before finishing the name audit.",
+    "revealed_empty_non_sentence": "No software mentions proposed in this owned region. Check for missed names before finishing the name audit.",
+    "owned_context_boundary": "Keep context readable and label it outside the source-text selection container.",
+    "alias_acceptance": "Accepting a relation does not accept occurrences, attributes or passage coverage."
+  }
+}

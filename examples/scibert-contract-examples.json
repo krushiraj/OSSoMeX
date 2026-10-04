@@ -1,0 +1,974 @@
+{
+  "fixture_version": "0.1.0",
+  "status": "design_contract_examples",
+  "note": "Synthetic expected outputs, not model predictions or research gold. Never use for training or reported evaluation.",
+  "offset_convention": "zero-based, half-open Unicode code-point offsets into normalized text",
+  "public_schema_version": "1.0",
+  "canonical_schema_version": "2.0",
+  "extraction_cases": [
+    {
+      "case_id": "fixture-multiversion",
+      "input": {
+        "document_id": "fixture-multiversion",
+        "text": "We used NumPy 1.24 and 1.26.",
+        "metadata": {
+          "title": null,
+          "doi": null,
+          "language": "en",
+          "domain": null,
+          "source": "synthetic-contract-fixture",
+          "extraction_method": "literal"
+        },
+        "sections": null,
+        "page_spans": null
+      },
+      "expected_public_records": [
+        {
+          "name": "NumPy",
+          "version": "1.24",
+          "context_sentence": "We used NumPy 1.24 and 1.26.",
+          "intents": [
+            "used"
+          ],
+          "sentiment": "not_expressed"
+        },
+        {
+          "name": "NumPy",
+          "version": "1.26",
+          "context_sentence": "We used NumPy 1.24 and 1.26.",
+          "intents": [
+            "used"
+          ],
+          "sentiment": "not_expressed"
+        }
+      ],
+      "expected_occurrences": [
+        {
+          "schema_version": "2.0",
+          "document_id": "fixture-multiversion",
+          "text_revision": "sha256:9336e769f3e37efdd3a7e28ff416b4d38e02e41f48bb509853c59b5151e489d8",
+          "mention_id": "fixture-multiversion|sha256:9336e769f3e37efdd3a7e28ff416b4d38e02e41f48bb509853c59b5151e489d8|8:13",
+          "name": "NumPy",
+          "name_span": {
+            "start": 8,
+            "end": 13
+          },
+          "context_sentence": "We used NumPy 1.24 and 1.26.",
+          "context_span": {
+            "start": 0,
+            "end": 28
+          },
+          "context_kind": "sentence",
+          "version_links": [
+            {
+              "text": "1.24",
+              "span": {
+                "start": 14,
+                "end": 18
+              },
+              "status": "explicit_local"
+            },
+            {
+              "text": "1.26",
+              "span": {
+                "start": 23,
+                "end": 27
+              },
+              "status": "explicit_local"
+            }
+          ],
+          "version_status": "explicit",
+          "intents": [
+            "used"
+          ],
+          "sentiment": "not_expressed",
+          "known": {
+            "software": true,
+            "versions": true,
+            "created": true,
+            "used": true,
+            "shared": true,
+            "sentiment": true
+          },
+          "evidence": {
+            "intents": [
+              {
+                "start": 0,
+                "end": 28
+              }
+            ],
+            "sentiment": []
+          },
+          "review": {
+            "status": "contract_fixture",
+            "reasons": []
+          },
+          "annotation_provenance": {
+            "kind": "synthetic_contract",
+            "training_eligible": false,
+            "evaluation_eligible": false
+          }
+        }
+      ],
+      "expected_counts": {
+        "mention_count": 1,
+        "export_row_count": 2,
+        "intent_counts": {
+          "used": 1
+        },
+        "sentiment_counts": {
+          "not_expressed": 1
+        }
+      },
+      "expected_status": {
+        "document_id": "fixture-multiversion",
+        "status": "success",
+        "chunks_expected": 1,
+        "chunks_succeeded": 1,
+        "chunks_failed": 0,
+        "mention_count": 1,
+        "error": null
+      }
+    },
+    {
+      "case_id": "fixture-negated-planned",
+      "input": {
+        "document_id": "fixture-negated-planned",
+        "text": "We did not use MATLAB; we may use R later.",
+        "metadata": {
+          "title": null,
+          "doi": null,
+          "language": "en",
+          "domain": null,
+          "source": "synthetic-contract-fixture",
+          "extraction_method": "literal"
+        },
+        "sections": null,
+        "page_spans": null
+      },
+      "expected_public_records": [
+        {
+          "name": "MATLAB",
+          "version": null,
+          "context_sentence": "We did not use MATLAB; we may use R later.",
+          "intents": [
+            "mentioned"
+          ],
+          "sentiment": "not_expressed"
+        },
+        {
+          "name": "R",
+          "version": null,
+          "context_sentence": "We did not use MATLAB; we may use R later.",
+          "intents": [
+            "mentioned"
+          ],
+          "sentiment": "not_expressed"
+        }
+      ],
+      "expected_occurrences": [
+        {
+          "schema_version": "2.0",
+          "document_id": "fixture-negated-planned",
+          "text_revision": "sha256:8d1463466bc9f15e4060f87c31ad7e9d52db54735f28ff6a189f98072b7d879e",
+          "mention_id": "fixture-negated-planned|sha256:8d1463466bc9f15e4060f87c31ad7e9d52db54735f28ff6a189f98072b7d879e|15:21",
+          "name": "MATLAB",
+          "name_span": {
+            "start": 15,
+            "end": 21
+          },
+          "context_sentence": "We did not use MATLAB; we may use R later.",
+          "context_span": {
+            "start": 0,
+            "end": 42
+          },
+          "context_kind": "sentence",
+          "version_links": [],
+          "version_status": "absent",
+          "intents": [
+            "mentioned"
+          ],
+          "sentiment": "not_expressed",
+          "known": {
+            "software": true,
+            "versions": true,
+            "created": true,
+            "used": true,
+            "shared": true,
+            "sentiment": true
+          },
+          "evidence": {
+            "intents": [
+              {
+                "start": 0,
+                "end": 42
+              }
+            ],
+            "sentiment": []
+          },
+          "review": {
+            "status": "contract_fixture",
+            "reasons": []
+          },
+          "annotation_provenance": {
+            "kind": "synthetic_contract",
+            "training_eligible": false,
+            "evaluation_eligible": false
+          }
+        },
+        {
+          "schema_version": "2.0",
+          "document_id": "fixture-negated-planned",
+          "text_revision": "sha256:8d1463466bc9f15e4060f87c31ad7e9d52db54735f28ff6a189f98072b7d879e",
+          "mention_id": "fixture-negated-planned|sha256:8d1463466bc9f15e4060f87c31ad7e9d52db54735f28ff6a189f98072b7d879e|34:35",
+          "name": "R",
+          "name_span": {
+            "start": 34,
+            "end": 35
+          },
+          "context_sentence": "We did not use MATLAB; we may use R later.",
+          "context_span": {
+            "start": 0,
+            "end": 42
+          },
+          "context_kind": "sentence",
+          "version_links": [],
+          "version_status": "absent",
+          "intents": [
+            "mentioned"
+          ],
+          "sentiment": "not_expressed",
+          "known": {
+            "software": true,
+            "versions": true,
+            "created": true,
+            "used": true,
+            "shared": true,
+            "sentiment": true
+          },
+          "evidence": {
+            "intents": [
+              {
+                "start": 0,
+                "end": 42
+              }
+            ],
+            "sentiment": []
+          },
+          "review": {
+            "status": "contract_fixture",
+            "reasons": []
+          },
+          "annotation_provenance": {
+            "kind": "synthetic_contract",
+            "training_eligible": false,
+            "evaluation_eligible": false
+          }
+        }
+      ],
+      "expected_counts": {
+        "mention_count": 2,
+        "export_row_count": 2,
+        "intent_counts": {
+          "mentioned": 2
+        },
+        "sentiment_counts": {
+          "not_expressed": 2
+        }
+      },
+      "expected_status": {
+        "document_id": "fixture-negated-planned",
+        "status": "success",
+        "chunks_expected": 1,
+        "chunks_succeeded": 1,
+        "chunks_failed": 0,
+        "mention_count": 2,
+        "error": null
+      }
+    },
+    {
+      "case_id": "fixture-negative",
+      "input": {
+        "document_id": "fixture-negative",
+        "text": "The samples were stored in CSV files on an NVIDIA GPU.",
+        "metadata": {
+          "title": null,
+          "doi": null,
+          "language": "en",
+          "domain": null,
+          "source": "synthetic-contract-fixture",
+          "extraction_method": "literal"
+        },
+        "sections": null,
+        "page_spans": null
+      },
+      "expected_public_records": [],
+      "expected_occurrences": [],
+      "expected_counts": {
+        "mention_count": 0,
+        "export_row_count": 0,
+        "intent_counts": {},
+        "sentiment_counts": {}
+      },
+      "expected_status": {
+        "document_id": "fixture-negative",
+        "status": "no_mentions",
+        "chunks_expected": 1,
+        "chunks_succeeded": 1,
+        "chunks_failed": 0,
+        "mention_count": 0,
+        "error": null
+      }
+    },
+    {
+      "case_id": "fixture-created-shared",
+      "input": {
+        "document_id": "fixture-created-shared",
+        "text": "We developed and released ToolX.",
+        "metadata": {
+          "title": null,
+          "doi": null,
+          "language": "en",
+          "domain": null,
+          "source": "synthetic-contract-fixture",
+          "extraction_method": "literal"
+        },
+        "sections": null,
+        "page_spans": null
+      },
+      "expected_public_records": [
+        {
+          "name": "ToolX",
+          "version": null,
+          "context_sentence": "We developed and released ToolX.",
+          "intents": [
+            "created",
+            "shared"
+          ],
+          "sentiment": "not_expressed"
+        }
+      ],
+      "expected_occurrences": [
+        {
+          "schema_version": "2.0",
+          "document_id": "fixture-created-shared",
+          "text_revision": "sha256:02a7a3133e65cd680f9f3f581be44f6b555245cb07d8f3c22abe3a471cc48268",
+          "mention_id": "fixture-created-shared|sha256:02a7a3133e65cd680f9f3f581be44f6b555245cb07d8f3c22abe3a471cc48268|26:31",
+          "name": "ToolX",
+          "name_span": {
+            "start": 26,
+            "end": 31
+          },
+          "context_sentence": "We developed and released ToolX.",
+          "context_span": {
+            "start": 0,
+            "end": 32
+          },
+          "context_kind": "sentence",
+          "version_links": [],
+          "version_status": "absent",
+          "intents": [
+            "created",
+            "shared"
+          ],
+          "sentiment": "not_expressed",
+          "known": {
+            "software": true,
+            "versions": true,
+            "created": true,
+            "used": true,
+            "shared": true,
+            "sentiment": true
+          },
+          "evidence": {
+            "intents": [
+              {
+                "start": 0,
+                "end": 32
+              }
+            ],
+            "sentiment": []
+          },
+          "review": {
+            "status": "contract_fixture",
+            "reasons": []
+          },
+          "annotation_provenance": {
+            "kind": "synthetic_contract",
+            "training_eligible": false,
+            "evaluation_eligible": false
+          }
+        }
+      ],
+      "expected_counts": {
+        "mention_count": 1,
+        "export_row_count": 1,
+        "intent_counts": {
+          "created": 1,
+          "shared": 1
+        },
+        "sentiment_counts": {
+          "not_expressed": 1
+        }
+      },
+      "expected_status": {
+        "document_id": "fixture-created-shared",
+        "status": "success",
+        "chunks_expected": 1,
+        "chunks_succeeded": 1,
+        "chunks_failed": 0,
+        "mention_count": 1,
+        "error": null
+      }
+    },
+    {
+      "case_id": "fixture-mixed-sentiment",
+      "input": {
+        "document_id": "fixture-mixed-sentiment",
+        "text": "ImageJ2 was fast but its documentation was poor.",
+        "metadata": {
+          "title": null,
+          "doi": null,
+          "language": "en",
+          "domain": null,
+          "source": "synthetic-contract-fixture",
+          "extraction_method": "literal"
+        },
+        "sections": null,
+        "page_spans": null
+      },
+      "expected_public_records": [
+        {
+          "name": "ImageJ2",
+          "version": null,
+          "context_sentence": "ImageJ2 was fast but its documentation was poor.",
+          "intents": [
+            "mentioned"
+          ],
+          "sentiment": "mixed"
+        }
+      ],
+      "expected_occurrences": [
+        {
+          "schema_version": "2.0",
+          "document_id": "fixture-mixed-sentiment",
+          "text_revision": "sha256:dcec293356d592c38adc964f526f940caceb0845032bd648ae2789f1630d80c4",
+          "mention_id": "fixture-mixed-sentiment|sha256:dcec293356d592c38adc964f526f940caceb0845032bd648ae2789f1630d80c4|0:7",
+          "name": "ImageJ2",
+          "name_span": {
+            "start": 0,
+            "end": 7
+          },
+          "context_sentence": "ImageJ2 was fast but its documentation was poor.",
+          "context_span": {
+            "start": 0,
+            "end": 48
+          },
+          "context_kind": "sentence",
+          "version_links": [],
+          "version_status": "absent",
+          "intents": [
+            "mentioned"
+          ],
+          "sentiment": "mixed",
+          "known": {
+            "software": true,
+            "versions": true,
+            "created": true,
+            "used": true,
+            "shared": true,
+            "sentiment": true
+          },
+          "evidence": {
+            "intents": [
+              {
+                "start": 0,
+                "end": 48
+              }
+            ],
+            "sentiment": [
+              {
+                "start": 0,
+                "end": 48
+              }
+            ]
+          },
+          "review": {
+            "status": "contract_fixture",
+            "reasons": []
+          },
+          "annotation_provenance": {
+            "kind": "synthetic_contract",
+            "training_eligible": false,
+            "evaluation_eligible": false
+          }
+        }
+      ],
+      "expected_counts": {
+        "mention_count": 1,
+        "export_row_count": 1,
+        "intent_counts": {
+          "mentioned": 1
+        },
+        "sentiment_counts": {
+          "mixed": 1
+        }
+      },
+      "expected_status": {
+        "document_id": "fixture-mixed-sentiment",
+        "status": "success",
+        "chunks_expected": 1,
+        "chunks_succeeded": 1,
+        "chunks_failed": 0,
+        "mention_count": 1,
+        "error": null
+      }
+    },
+    {
+      "case_id": "fixture-repeated-mentions",
+      "input": {
+        "document_id": "fixture-repeated-mentions",
+        "text": "We used NumPy. We may use NumPy later.",
+        "metadata": {
+          "title": null,
+          "doi": null,
+          "language": "en",
+          "domain": null,
+          "source": "synthetic-contract-fixture",
+          "extraction_method": "literal"
+        },
+        "sections": null,
+        "page_spans": null
+      },
+      "expected_public_records": [
+        {
+          "name": "NumPy",
+          "version": null,
+          "context_sentence": "We used NumPy.",
+          "intents": [
+            "used"
+          ],
+          "sentiment": "not_expressed"
+        },
+        {
+          "name": "NumPy",
+          "version": null,
+          "context_sentence": "We may use NumPy later.",
+          "intents": [
+            "mentioned"
+          ],
+          "sentiment": "not_expressed"
+        }
+      ],
+      "expected_occurrences": [
+        {
+          "schema_version": "2.0",
+          "document_id": "fixture-repeated-mentions",
+          "text_revision": "sha256:69736fbe3a6e00fa868993c22acfe031dba2490dcb4b0595a30a417c93263aa2",
+          "mention_id": "fixture-repeated-mentions|sha256:69736fbe3a6e00fa868993c22acfe031dba2490dcb4b0595a30a417c93263aa2|8:13",
+          "name": "NumPy",
+          "name_span": {
+            "start": 8,
+            "end": 13
+          },
+          "context_sentence": "We used NumPy.",
+          "context_span": {
+            "start": 0,
+            "end": 14
+          },
+          "context_kind": "sentence",
+          "version_links": [],
+          "version_status": "absent",
+          "intents": [
+            "used"
+          ],
+          "sentiment": "not_expressed",
+          "known": {
+            "software": true,
+            "versions": true,
+            "created": true,
+            "used": true,
+            "shared": true,
+            "sentiment": true
+          },
+          "evidence": {
+            "intents": [
+              {
+                "start": 0,
+                "end": 14
+              }
+            ],
+            "sentiment": []
+          },
+          "review": {
+            "status": "contract_fixture",
+            "reasons": []
+          },
+          "annotation_provenance": {
+            "kind": "synthetic_contract",
+            "training_eligible": false,
+            "evaluation_eligible": false
+          }
+        },
+        {
+          "schema_version": "2.0",
+          "document_id": "fixture-repeated-mentions",
+          "text_revision": "sha256:69736fbe3a6e00fa868993c22acfe031dba2490dcb4b0595a30a417c93263aa2",
+          "mention_id": "fixture-repeated-mentions|sha256:69736fbe3a6e00fa868993c22acfe031dba2490dcb4b0595a30a417c93263aa2|26:31",
+          "name": "NumPy",
+          "name_span": {
+            "start": 26,
+            "end": 31
+          },
+          "context_sentence": "We may use NumPy later.",
+          "context_span": {
+            "start": 15,
+            "end": 38
+          },
+          "context_kind": "sentence",
+          "version_links": [],
+          "version_status": "absent",
+          "intents": [
+            "mentioned"
+          ],
+          "sentiment": "not_expressed",
+          "known": {
+            "software": true,
+            "versions": true,
+            "created": true,
+            "used": true,
+            "shared": true,
+            "sentiment": true
+          },
+          "evidence": {
+            "intents": [
+              {
+                "start": 15,
+                "end": 38
+              }
+            ],
+            "sentiment": []
+          },
+          "review": {
+            "status": "contract_fixture",
+            "reasons": []
+          },
+          "annotation_provenance": {
+            "kind": "synthetic_contract",
+            "training_eligible": false,
+            "evaluation_eligible": false
+          }
+        }
+      ],
+      "expected_counts": {
+        "mention_count": 2,
+        "export_row_count": 2,
+        "intent_counts": {
+          "used": 1,
+          "mentioned": 1
+        },
+        "sentiment_counts": {
+          "not_expressed": 2
+        }
+      },
+      "expected_status": {
+        "document_id": "fixture-repeated-mentions",
+        "status": "success",
+        "chunks_expected": 1,
+        "chunks_succeeded": 1,
+        "chunks_failed": 0,
+        "mention_count": 2,
+        "error": null
+      }
+    },
+    {
+      "case_id": "fixture-paired-versions",
+      "input": {
+        "document_id": "fixture-paired-versions",
+        "text": "We used ToolX 2.0 and ToolY 3.1.",
+        "metadata": {
+          "title": null,
+          "doi": null,
+          "language": "en",
+          "domain": null,
+          "source": "synthetic-contract-fixture",
+          "extraction_method": "literal"
+        },
+        "sections": null,
+        "page_spans": null
+      },
+      "expected_public_records": [
+        {
+          "name": "ToolX",
+          "version": "2.0",
+          "context_sentence": "We used ToolX 2.0 and ToolY 3.1.",
+          "intents": [
+            "used"
+          ],
+          "sentiment": "not_expressed"
+        },
+        {
+          "name": "ToolY",
+          "version": "3.1",
+          "context_sentence": "We used ToolX 2.0 and ToolY 3.1.",
+          "intents": [
+            "used"
+          ],
+          "sentiment": "not_expressed"
+        }
+      ],
+      "expected_occurrences": [
+        {
+          "schema_version": "2.0",
+          "document_id": "fixture-paired-versions",
+          "text_revision": "sha256:8393dcaacde8a033fd2d055a494f4a11d8626733aae6121f0ce626f0da1b8899",
+          "mention_id": "fixture-paired-versions|sha256:8393dcaacde8a033fd2d055a494f4a11d8626733aae6121f0ce626f0da1b8899|8:13",
+          "name": "ToolX",
+          "name_span": {
+            "start": 8,
+            "end": 13
+          },
+          "context_sentence": "We used ToolX 2.0 and ToolY 3.1.",
+          "context_span": {
+            "start": 0,
+            "end": 32
+          },
+          "context_kind": "sentence",
+          "version_links": [
+            {
+              "text": "2.0",
+              "span": {
+                "start": 14,
+                "end": 17
+              },
+              "status": "explicit_local"
+            }
+          ],
+          "version_status": "explicit",
+          "intents": [
+            "used"
+          ],
+          "sentiment": "not_expressed",
+          "known": {
+            "software": true,
+            "versions": true,
+            "created": true,
+            "used": true,
+            "shared": true,
+            "sentiment": true
+          },
+          "evidence": {
+            "intents": [
+              {
+                "start": 0,
+                "end": 32
+              }
+            ],
+            "sentiment": []
+          },
+          "review": {
+            "status": "contract_fixture",
+            "reasons": []
+          },
+          "annotation_provenance": {
+            "kind": "synthetic_contract",
+            "training_eligible": false,
+            "evaluation_eligible": false
+          }
+        },
+        {
+          "schema_version": "2.0",
+          "document_id": "fixture-paired-versions",
+          "text_revision": "sha256:8393dcaacde8a033fd2d055a494f4a11d8626733aae6121f0ce626f0da1b8899",
+          "mention_id": "fixture-paired-versions|sha256:8393dcaacde8a033fd2d055a494f4a11d8626733aae6121f0ce626f0da1b8899|22:27",
+          "name": "ToolY",
+          "name_span": {
+            "start": 22,
+            "end": 27
+          },
+          "context_sentence": "We used ToolX 2.0 and ToolY 3.1.",
+          "context_span": {
+            "start": 0,
+            "end": 32
+          },
+          "context_kind": "sentence",
+          "version_links": [
+            {
+              "text": "3.1",
+              "span": {
+                "start": 28,
+                "end": 31
+              },
+              "status": "explicit_local"
+            }
+          ],
+          "version_status": "explicit",
+          "intents": [
+            "used"
+          ],
+          "sentiment": "not_expressed",
+          "known": {
+            "software": true,
+            "versions": true,
+            "created": true,
+            "used": true,
+            "shared": true,
+            "sentiment": true
+          },
+          "evidence": {
+            "intents": [
+              {
+                "start": 0,
+                "end": 32
+              }
+            ],
+            "sentiment": []
+          },
+          "review": {
+            "status": "contract_fixture",
+            "reasons": []
+          },
+          "annotation_provenance": {
+            "kind": "synthetic_contract",
+            "training_eligible": false,
+            "evaluation_eligible": false
+          }
+        }
+      ],
+      "expected_counts": {
+        "mention_count": 2,
+        "export_row_count": 2,
+        "intent_counts": {
+          "used": 2
+        },
+        "sentiment_counts": {
+          "not_expressed": 2
+        }
+      },
+      "expected_status": {
+        "document_id": "fixture-paired-versions",
+        "status": "success",
+        "chunks_expected": 1,
+        "chunks_succeeded": 1,
+        "chunks_failed": 0,
+        "mention_count": 2,
+        "error": null
+      }
+    }
+  ],
+  "partial_annotation_case": {
+    "case_id": "partial-annotation-software-only",
+    "input": {
+      "document_id": "fixture-multiversion",
+      "text": "We used NumPy 1.24 and 1.26.",
+      "metadata": {
+        "title": null,
+        "doi": null,
+        "language": "en",
+        "domain": null,
+        "source": "synthetic-contract-fixture",
+        "extraction_method": "literal"
+      },
+      "sections": null,
+      "page_spans": null
+    },
+    "annotation": {
+      "schema_version": "2.0",
+      "document_id": "fixture-multiversion",
+      "text_revision": "sha256:9336e769f3e37efdd3a7e28ff416b4d38e02e41f48bb509853c59b5151e489d8",
+      "mention_id": "fixture-multiversion|sha256:9336e769f3e37efdd3a7e28ff416b4d38e02e41f48bb509853c59b5151e489d8|8:13",
+      "name": "NumPy",
+      "name_span": {
+        "start": 8,
+        "end": 13
+      },
+      "context_sentence": "We used NumPy 1.24 and 1.26.",
+      "context_span": {
+        "start": 0,
+        "end": 28
+      },
+      "context_kind": "sentence",
+      "version_links": [],
+      "version_status": "unannotated",
+      "intents": null,
+      "sentiment": null,
+      "known": {
+        "software": true,
+        "versions": false,
+        "created": false,
+        "used": false,
+        "shared": false,
+        "sentiment": false
+      },
+      "evidence": {
+        "intents": [],
+        "sentiment": []
+      },
+      "review": {
+        "status": "unreviewed",
+        "reasons": [
+          "ATTRIBUTE_LABELS_UNAVAILABLE"
+        ]
+      },
+      "annotation_provenance": {
+        "kind": "synthetic_contract",
+        "training_eligible": false,
+        "evaluation_eligible": false
+      }
+    },
+    "expected_training_masks": {
+      "software_span": true,
+      "version_span": false,
+      "version_link": false,
+      "intent": false,
+      "sentiment": false
+    },
+    "expected_export_action": "Not a prediction; never export as a completed public extraction.",
+    "note": "Software labels alone do not establish negative coverage for other entity types."
+  },
+  "failure_case": {
+    "case_id": "fixture-timeout",
+    "input": {
+      "document_id": "fixture-multiversion",
+      "text": "We used NumPy 1.24 and 1.26.",
+      "metadata": {
+        "title": null,
+        "doi": null,
+        "language": "en",
+        "domain": null,
+        "source": "synthetic-contract-fixture",
+        "extraction_method": "literal"
+      },
+      "sections": null,
+      "page_spans": null
+    },
+    "expected_public_records": [],
+    "expected_occurrences": [],
+    "expected_status": {
+      "document_id": "fixture-multiversion",
+      "status": "timeout",
+      "chunks_expected": 1,
+      "chunks_succeeded": 0,
+      "chunks_failed": 1,
+      "mention_count": 0,
+      "error": {
+        "code": "INFERENCE_TIMEOUT",
+        "message": "The configured per-chunk deadline expired."
+      }
+    },
+    "expected_evaluation_action": "Keep document eligible; count missed mentions and report the failed chunk. Do not infer a negative document."
+  },
+  "uncertainty_contract": {
+    "decision": "Best label in public output; expose actual model scores, calibration status, and review flags in evidence.",
+    "missing_scores_in_fixtures": "Model scores do not exist for these synthetic examples; expected confidence numbers are intentionally unspecified.",
+    "version_null_meaning": "No confirmed linked version; evidence distinguishes absent from ambiguous.",
+    "required_prediction_evidence_fields": [
+      "scores",
+      "calibration",
+      "needs_review",
+      "review_reasons",
+      "run_id",
+      "checkpoint_hashes"
+    ]
+  }
+}

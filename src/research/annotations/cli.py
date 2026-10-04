@@ -167,7 +167,7 @@ def run(args):
 def build_demo(output: Path) -> int:
     from copy import deepcopy
     from ..contracts import FIELDS, occurrence_id
-    pack=json.loads((ROOT/'docs/plans/scibert-contract-examples.json').read_bytes())
+    pack=json.loads((ROOT/'examples/scibert-contract-examples.json').read_bytes())
     policy={'policy_version':'scibert-poc-2.0','policy_hash':digest((ROOT/'annotations/scibert-v2/policy.md').read_bytes())}
     items=[]
     cases=deepcopy(pack['extraction_cases'])

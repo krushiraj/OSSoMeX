@@ -7,7 +7,7 @@ import pytest
 
 @pytest.fixture(scope="session")
 def contract_pack():
-    path = Path(__file__).resolve().parents[1] / "docs/plans/scibert-contract-examples.json"
+    path = Path(__file__).resolve().parents[1] / "examples/scibert-contract-examples.json"
     return json.loads(path.read_text(encoding="utf-8"))
 
 

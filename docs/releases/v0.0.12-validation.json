@@ -1,0 +1,76 @@
+{
+  "date": "2026-10-04",
+  "code_commit": "0019e3efbb7eccf0847fe6799caa272782d0b5ee",
+  "source_tag": "v0.0.12",
+  "package_version": "0.0.1",
+  "environment": {
+    "os": "Darwin",
+    "machine": "arm64",
+    "scope": "Fresh virtual environment on the development Mac, not a second machine"
+  },
+  "tests": {
+    "passed": 1869,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "junit_sha256": "1696d53dfd87dbec23235ddae9df95ac002f46440c7438d1422f268094e97b17",
+    "code_commit": "a47841b"
+  },
+  "installation": {
+    "dependencies": "pip install --require-hashes -r requirements-scibert.lock",
+    "package": "pip install --no-deps research-0.0.1-py3-none-any.whl",
+    "wheel_sha256": "b9ebfb390bc8b17fcf1c6d8645eeec0e7fcf5fae96331bb902396805be324bc4",
+    "outside_source_checkout": true
+  },
+  "inference": [
+    {
+      "checkpoint": "006",
+      "device": "cpu",
+      "input": "We used NumPy 1.24.3.",
+      "status": "success",
+      "rows": 1
+    },
+    {
+      "checkpoint": "012",
+      "device": "cpu",
+      "input": "We used NumPy 1.24.3.",
+      "status": "success",
+      "rows": 1
+    }
+  ],
+  "huggingface": {
+    "repo_id": "krushiraj/OSSoMeX",
+    "revision": "a6b0ad385e311af40fc7cf2f1778a66074edf577",
+    "tag": "v0.0.12",
+    "private": false,
+    "verified_model_files": 48,
+    "verification": "Remote LFS SHA-256 for tensor files; downloaded SHA-256 for other files; all sizes matched"
+  },
+  "linux_ci": {
+    "run": "https://github.com/krushiraj/OSSoMeX/actions/runs/37195749223",
+    "code_commit": "0c5eaef8366318b42bdd5cd6346802066bc9fc75",
+    "status": "success",
+    "passed": 1862,
+    "skipped": 7,
+    "failures": 0,
+    "errors": 0,
+    "junit_sha256": "d66279a1704775869f2644e69a01a12567aa8149410a90a2a0bf699e44f4cccb",
+    "environment_sha256": "aebaa9a2e35e35e235541fb6577a2e6fc8df74cd4f00f1d119228f7d459ca3bb",
+    "scope": "Linux contributor, model-contract and browser tests; seven retained-data checks require artifacts excluded from Git. Actual released-checkpoint inference was tested on the development Mac, not this runner.",
+    "reload_max_logit_deltas": {
+      "test_head_shape_safe_reload_and_nonzero_encoder_gradient[linker-1]": 9.313225746154785e-10,
+      "test_head_shape_safe_reload_and_nonzero_encoder_gradient[alias-1]": 9.313225746154785e-10,
+      "test_head_shape_safe_reload_and_nonzero_encoder_gradient[intent-3]": 0.0,
+      "test_head_shape_safe_reload_and_nonzero_encoder_gradient[sentiment-4]": 0.0
+    }
+  },
+  "public_access": {
+    "github_url": "https://github.com/krushiraj/OSSoMeX",
+    "github_private": false,
+    "huggingface_url": "https://huggingface.co/krushiraj/OSSoMeX",
+    "huggingface_private": false,
+    "model_revision": "a6b0ad385e311af40fc7cf2f1778a66074edf577",
+    "anonymous_download": "checkpoints/scibert-full-label-012/manifest.json",
+    "download_sha256": "67decb629e51bc3d452debb404d91410bfa16ad31aa1e10f294d4479d533945a"
+  }
+}

@@ -1,6 +1,6 @@
 include README.md LICENSE NOTICE THIRD_PARTY_NOTICES.md CITATION.cff CHANGELOG.md CONTRIBUTING.md ROADMAP.md
-include requirements-scibert.lock requirements-scibert-dev.lock protocol.html approvals.json
-recursive-include docs *.md *.json *.html
+include requirements-scibert.lock requirements-scibert-dev.lock approvals.json
+recursive-include docs *.md *.json *.html *.gif *.cast *.txt
 recursive-include schemas *.json
 recursive-include configs *.json *.yml *.yaml *.jsonl
 recursive-include examples *.py *.txt *.json *.jsonl

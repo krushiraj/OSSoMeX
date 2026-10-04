@@ -1,0 +1,14 @@
+{
+  "checkpoint": "scibert-full-label-006",
+  "device": "cpu",
+  "command": ".venv-scibert/bin/python -m research full-label interactive --model checkpoints/scibert-full-label-006 --device cpu --format table",
+  "samples": [
+    "We used NumPy 1.24.3 for numerical analysis.",
+    "The simulations were performed in MATLAB R2023b.",
+    "We used Python 3.11 and pandas 2.0.3 to process the data.",
+    "The samples were stored at room temperature."
+  ],
+  "exit_status": 0,
+  "recording": "Real PTY output rendered as a terminal GIF; idle gaps capped at 6 seconds. Not a speed benchmark.",
+  "manifest_sha256": "fe92420fff8a57b078c3b210fc5312c1a65d599dfc850a479ce266dafb689f8d"
+}

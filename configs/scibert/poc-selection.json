@@ -14,5 +14,5 @@
   "cli_requires_explicit_model": true,
   "experimental_arm": "full-label-007",
   "retained_comparator": "full-label-005",
-  "decision_document": "docs/scibert-poc-selection.md"
+  "decision_document": "docs/models/006.md"
 }

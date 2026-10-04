@@ -17,7 +17,7 @@ dependencies = [
 
 [project.urls]
 Repository = "https://github.com/krushiraj/OSSoMeX"
-Documentation = "https://github.com/krushiraj/OSSoMeX/tree/scibert-foundation/docs"
+Documentation = "https://github.com/krushiraj/OSSoMeX/tree/main/docs"
 Issues = "https://github.com/krushiraj/OSSoMeX/issues"
 
 [project.optional-dependencies]

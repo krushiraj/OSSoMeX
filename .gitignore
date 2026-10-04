@@ -47,3 +47,9 @@ scripts/software_mentions.json
 # Local model handoff contents extracted beside the checkout.
 /MODEL_BUNDLE.json
 /bundle-notices/
+
+# Internal planning and session notes stay local.
+/docs/plans/
+/docs/superpowers/
+/docs/archive/
+/configs/session_plan.json

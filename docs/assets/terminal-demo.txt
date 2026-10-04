@@ -1,0 +1,47 @@
+OSSoMeX interactive demo
+Command: .venv-scibert/bin/python -m research full-label interactive --model checkpoints/scibert-full-label-006 --device cpu --format table
+Synthetic examples; actual model outputs, not benchmark gold.
+
+$ .venv-scibert/bin/python -m research full-label interactive --model checkpoints/scibert-full-label-006 --devic
+e cpu --format table
+Enter: submit; Escape then Enter: newline; Ctrl+C: clear; Ctrl+D: exit. Pasted text stays one draft. Terminal/OS
+ line endings may change; use --stdin for exact UTF-8.
+text> We used NumPy 1.24.3 for numerical analysis.
+interactive-1: success · 1 software mentions
+Software | Intent | Version | Aliases | Sentiment
+---------+--------+---------+---------+--------------
+NumPy    | used   | 1.24.3  | —       | not expressed
+Experimental predictions · uncalibrated scores · — none linked; unknown = not resolved
+text>
+
+---
+
+text> The simulations were performed in MATLAB R2023b.
+
+interactive-2: success · 1 software mentions
+Software | Intent | Version | Aliases | Sentiment
+---------+--------+---------+---------+--------------
+MATLAB   | used   | R2023b  | —       | not expressed
+Experimental predictions · uncalibrated scores · — none linked; unknown = not resolved
+text>
+
+---
+
+text> We used Python 3.11 and pandas 2.0.3 to process the data.
+
+interactive-3: success · 2 software mentions
+Software | Intent | Version | Aliases | Sentiment
+---------+--------+---------+---------+--------------
+Python   | used   | 3.11    | —       | not expressed
+pandas   | used   | 2.0.3   | —       | not expressed
+Experimental predictions · uncalibrated scores · — none linked; unknown = not resolved
+text>
+
+---
+
+text> The samples were stored at room temperature.
+
+interactive-4: no_mentions · 0 software mentions
+No software mentions detected.
+Experimental predictions · uncalibrated scores · — none linked; unknown = not resolved
+text>
