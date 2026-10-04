@@ -1,7 +1,7 @@
 {
   "schema_version": "ossomex-model-registry-1",
   "release": "0.0.1",
-  "hosted_weights": false,
+  "hosted_weights": true,
   "models": [
     {
       "id": "scibert-full-label-006",

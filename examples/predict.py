@@ -5,7 +5,7 @@ from pathlib import Path
 from research.training.full_label import FullLabelPipeline
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--model', default='checkpoints/scibert-full-label-006')
+parser.add_argument('--model', default='model-assets/checkpoints/scibert-full-label-006')
 parser.add_argument('--device', choices=('cpu', 'mps', 'auto'), default='cpu')
 args = parser.parse_args()
 pipeline = FullLabelPipeline(Path(args.model), device=args.device)
