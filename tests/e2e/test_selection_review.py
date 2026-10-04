@@ -485,8 +485,10 @@ def test_session_delayed_save_blocks_navigation_and_preserves_destination(page, 
     pending = []
     def delay_response(route):
         pending.append((route, route.fetch()))
+        page.evaluate('window.__testDelayedSaveReady = true')
     page.route('**/api/decisions', delay_response)
     page.get_by_role('button', name='Save', exact=True).click()
+    page.wait_for_function('window.__testDelayedSaveReady === true')
     expect(page.get_by_role('button', name='Save', exact=True)).to_be_disabled()
     page.wait_for_function("document.querySelector('#review-footer').textContent.includes('Saving')")
     page.keyboard.press('Alt+ArrowLeft')
