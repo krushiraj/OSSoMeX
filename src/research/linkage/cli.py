@@ -72,6 +72,7 @@ def _resolve(args) -> int:
 def _evaluate(args) -> int:
     from ..data.manifest import read_jsonl
     from .evaluate import bootstrap, link_metrics
+    from .lockbox import _paper_bootstrap, paper_link_metrics
     papers = {t['task_id']: t['paper_id'] for t in read_jsonl(args.tasks)}
     gold = [{**g, 'paper_id': papers[g['task_id']]} for g in read_jsonl(args.gold)]
     result = {'status': 'success', 'gold_tasks': len(gold), 'arms': {}}
@@ -79,5 +80,7 @@ def _evaluate(args) -> int:
         predictions = read_jsonl(path)
         arm = predictions[0].get('arm', path.stem) if predictions else path.stem
         result['arms'][arm] = {**link_metrics(gold, predictions), 'ci95': bootstrap(gold, predictions)}
+        pairs = [(papers[p['task_id']], p['entity_id']) for p in predictions if p['entity_id']]
+        result['arms'][arm]['paper_level'] = {**paper_link_metrics(gold, pairs), 'ci95': _paper_bootstrap(gold, pairs)}
     print(json.dumps(result, indent=2))
     return 0

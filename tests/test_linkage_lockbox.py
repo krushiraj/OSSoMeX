@@ -95,3 +95,10 @@ def test_partial_attribute_stages_still_yield_detector_occurrences():
     prediction['stage_status']['detector']['status'] = 'partial'
     with pytest.raises(ValueError, match='PREDICTION_FAILED'):
         lockbox.tasks_from_prediction(doc, prediction)
+
+
+def test_gold_rows_sharing_an_entity_count_once_per_paper():
+    gold = [{'paper_id': 'p1', 'entity_ids': ['fsl']}, {'paper_id': 'p1', 'entity_ids': ['fsl', 'fsl-bt']},
+            {'paper_id': 'p1', 'entity_ids': ['spm']}]
+    m = lockbox.paper_link_metrics(gold, [('p1', 'fsl-bt')])
+    assert (m['gold_links'], m['recalled_links'], m['correct_links']) == (2, 1, 1)

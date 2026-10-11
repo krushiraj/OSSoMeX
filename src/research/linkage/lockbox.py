@@ -81,7 +81,14 @@ def paper_link_metrics(gold, predicted):
     groups = {}
     for g in gold:
         if g['entity_ids']:
-            groups.setdefault(g['paper_id'], []).append(set(g['entity_ids']))
+            # Rows sharing an entity in one paper (e.g. BET and FSL -> FSL) are one paper-software link.
+            merged, rest = set(g['entity_ids']), []
+            for ids in groups.get(g['paper_id'], []):
+                if ids & merged:
+                    merged |= ids
+                else:
+                    rest.append(ids)
+            groups[g['paper_id']] = rest + [merged]
     correct = sum(any(e in ids for ids in groups.get(p, [])) for p, e in pairs)
     recalled = sum(any((p, e) in pairs for e in ids) for p, gs in groups.items() for ids in gs)
     total = sum(len(gs) for gs in groups.values())
