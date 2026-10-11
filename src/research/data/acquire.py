@@ -88,7 +88,7 @@ def fetch_public(url: str, destination: Path, policy: dict) -> dict:
             for redirect in range(6):
                 _safe_url(current, resolve='session' not in policy)
                 response = session.get(current, timeout=(10, 60), allow_redirects=False, stream=True,
-                                       headers={'User-Agent': 'scibert-research/2.0'})
+                                       headers={'User-Agent': policy.get('user_agent', 'scibert-research/2.0')})
                 if response.status_code not in (301, 302, 303, 307, 308):
                     break
                 target = urljoin(current, response.headers.get('Location', ''))

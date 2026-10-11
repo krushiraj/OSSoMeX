@@ -406,6 +406,8 @@ def main(argv: list[str] | None = None) -> int:
     register_full_label(sub)
     from .comparison.cli import register as register_comparison
     register_comparison(sub)
+    from .registry.cli import register as register_registry
+    register_registry(sub)
 
     p = sub.add_parser("inventory")
     p.add_argument("--input", required=True)
