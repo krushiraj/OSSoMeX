@@ -225,3 +225,29 @@ def test_jsonl_round_trips_unicode_line_separators_inside_strings(tmp_path):
     rows = [{'description': 'first second\x85third'}, {'description': 'plain'}]
     write_jsonl(tmp_path / 'rows.jsonl', rows)
     assert read_jsonl(tmp_path / 'rows.jsonl') == rows
+
+
+def test_audit_records_unreachable_project_evidence_instead_of_aborting(tmp_path, monkeypatch):
+    from research.data.acquire import AcquisitionError
+    from research.data.manifest import write_jsonl
+    run = tmp_path / 'run'
+    entity = {'entity_id': 'ecosystems:cran/lm.br', 'package_ids': {'cran': ['lm.br']}, 'description': 'd',
+              'repo_keys': [], 'names': ['lm.br']}
+    write_jsonl(run / 'entities.jsonl', [entity])
+    write_jsonl(run / 'czi_links.jsonl', [{
+        'record': 'ecosystems:cran/lm.br', 'czi_id': 'SM9', 'czi_name': 'lm.br', 'mentions_count': 1,
+        'project_url': 'https://papers.ecosyste.ms/api/v1/projects/cran/lm.br', 'entity_id': 'ecosystems:cran/lm.br',
+        'flags': [], 'same_name_entities': []}])
+
+    def missing(url, destination, policy):
+        raise AcquisitionError('http_404')
+    monkeypatch.setattr(audit, 'fetch_public', missing)
+    assert audit.sample_run(run, top=1, random_n=0, delay=0)['tasks'] == 1
+    task = read_jsonl(run / 'audit/tasks.jsonl')[0]
+    assert task['papers'] == [] and task['evidence_error'] == 'http_404'
+
+    def offline(url, destination, policy):
+        raise AcquisitionError('network_failed')
+    monkeypatch.setattr(audit, 'fetch_public', offline)
+    with pytest.raises(AcquisitionError):
+        audit._paper_evidence({'project_url': 'https://papers.ecosyste.ms/x'}, tmp_path, {}, 5, 0)

@@ -6,7 +6,7 @@ import random
 import time
 from pathlib import Path
 
-from ..data.acquire import fetch_public
+from ..data.acquire import AcquisitionError, fetch_public
 from ..data.manifest import digest, json_bytes, read_jsonl, write_jsonl, write_once
 
 VERDICTS = {'correct', 'wrong', 'unsure'}
@@ -76,7 +76,7 @@ def _fetch(url, destination, policy, delay):
     return destination.read_bytes()
 
 
-def sample_run(run: Path, top=200, random_n=200, seed=42, papers=5, policy=None, delay=0.2) -> dict:
+def sample_run(run: Path, top=200, random_n=200, seed=42, papers_per_task=5, policy=None, delay=0.2) -> dict:
     run = Path(run)
     links = read_jsonl(run / 'czi_links.jsonl')
     entities = {e['entity_id']: e for e in read_jsonl(run / 'entities.jsonl')}
@@ -84,6 +84,13 @@ def sample_run(run: Path, top=200, random_n=200, seed=42, papers=5, policy=None,
     tasks = []
     for row in sample(links, top, random_n, seed):
         entity = entities[row['entity_id']]
+        try:
+            papers, error = _paper_evidence(row, run / 'raw/audit', policy, papers_per_task, delay), None
+        except AcquisitionError as exc:
+            # papers.ecosyste.ms routes dotted names (e.g. cran/data.table) as formats and returns 404.
+            if exc.code != 'http_404':
+                raise
+            papers, error = [], exc.code
         tasks.append({
             'task_id': f"{row['stratum']}:{row['record']}", 'record': row['record'], 'stratum': row['stratum'], 'czi_id': row['czi_id'],
             'czi_name': row['czi_name'], 'entity_id': row['entity_id'], 'mentions_count': row['mentions_count'],
@@ -91,10 +98,10 @@ def sample_run(run: Path, top=200, random_n=200, seed=42, papers=5, policy=None,
             'repo_keys': entity['repo_keys'],
             'same_name_entities': [{'entity_id': o, 'names': entities[o]['names'][:3],
                                     'description': entities[o]['description']} for o in row['same_name_entities'][:5]],
-            'papers': _paper_evidence(row, run / 'raw/audit', policy, papers, delay)})
+            'papers': papers, **({'evidence_error': error} if error else {})})
     write_jsonl(run / 'audit/tasks.jsonl', tasks)
     summary = {'status': 'success', 'tasks': len(tasks), 'top': top, 'random': random_n, 'seed': seed,
-               'papers_per_task': papers}
+               'papers_per_task': papers_per_task, 'evidence_errors': sum('evidence_error' in t for t in tasks)}
     write_once(run / 'audit/sample.json', json_bytes(summary))
     return summary
 
