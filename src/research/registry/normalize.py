@@ -8,8 +8,9 @@ REPO_HOSTS = {'github.com', 'gitlab.com', 'bitbucket.org', 'codeberg.org', 'sour
 PACKAGE_PATTERNS = [
     ('pypi', re.compile(r'^(?:pypi\.org/project|pypi\.python\.org/pypi)/([^/]+)')),
     ('cran', re.compile(r'^cran\.(?:r-project\.org|rstudio\.com)/(?:package=|web/packages/)([^/]+)')),
-    ('bioconductor', re.compile(r'^bioconductor\.org/packages/(?:(?:release|devel|[\d.]+)/(?:bioc|data/annotation|data/experiment|workflows)/html/)?([^/]+?)(?:\.html)?(?:/|$)')),
 ]
+BIOC_RELEASE = re.compile(r'^(release|devel|\d+\.\d+)$')
+BIOC_SECTIONS = {'html', 'vignettes', 'manuals', 'news'}
 
 
 def form_exact(text):
@@ -59,10 +60,22 @@ def repo_key(url):
     return '/'.join([host] + [p.lower() for p in path])
 
 
+def _bioconductor_id(path):
+    # /packages/X, or /packages/<release>/<repo>/<section>/X[.html]; release paths alone are not packages.
+    if not BIOC_RELEASE.match(path[0]):
+        return 'bioconductor', package_id('bioconductor', path[0].removesuffix('.html'))
+    for i, part in enumerate(path[:-1]):
+        if part in BIOC_SECTIONS:
+            return 'bioconductor', package_id('bioconductor', path[i + 1].removesuffix('.html'))
+    return None
+
+
 def package_ids_from_url(url):
     host, path = _host_path(url)
     if not host:
         return None
+    if host == 'bioconductor.org' and len(path) >= 2 and path[0] == 'packages':
+        return _bioconductor_id(path[1:])
     target = '/'.join([host] + path)
     for ecosystem, pattern in PACKAGE_PATTERNS:
         match = pattern.match(target)

@@ -111,7 +111,9 @@ def test_merge_uses_identifiers_never_names_and_refuses_monorepo_package_conflic
         record('wikidata', 'Q2', 'STAR', repo_keys=['github.com/alexdobin/star']),
         record('ecosystems', 'cran/STAR', 'STAR', package_ids={'cran': ['star']}),
         record('ecosystems', 'pypi/a', 'a', package_ids={'pypi': ['a']}, repo_keys=['github.com/org/mono']),
-        record('ecosystems', 'pypi/b', 'b', package_ids={'pypi': ['b']}, repo_keys=['github.com/org/mono'])]
+        record('ecosystems', 'pypi/b', 'b', package_ids={'pypi': ['b']}, repo_keys=['github.com/org/mono']),
+        record('biotools', 'plugin', 'plugin', package_ids={'pypi': ['plugin-x']}, repo_keys=['github.com/org/tool']),
+        record('ecosystems', 'pypi/tool', 'tool', package_ids={'pypi': ['tool']}, repo_keys=['github.com/org/tool'])]
     entities, conflicts = build.merge(records)
     members = {e['entity_id']: e['members'] for e in entities}
     assert members['wikidata:Q1'] == ['ecosystems:pypi/scikit-learn', 'wikidata:Q1']
@@ -119,6 +121,8 @@ def test_merge_uses_identifiers_never_names_and_refuses_monorepo_package_conflic
     assert 'ecosystems:cran/STAR' in members
     assert 'ecosystems:pypi/a' in members and 'ecosystems:pypi/b' in members
     assert conflicts == [{'edge': 'repo:github.com/org/mono', 'left': 'ecosystems:pypi/a', 'right': 'ecosystems:pypi/b',
+                          'reason': 'same_source_ecosystems'},
+                         {'edge': 'repo:github.com/org/tool', 'left': 'biotools:plugin', 'right': 'ecosystems:pypi/tool',
                           'reason': 'distinct_pypi_packages'}]
 
 
@@ -251,3 +255,48 @@ def test_audit_records_unreachable_project_evidence_instead_of_aborting(tmp_path
     monkeypatch.setattr(audit, 'fetch_public', offline)
     with pytest.raises(AcquisitionError):
         audit._paper_evidence({'project_url': 'https://papers.ecosyste.ms/x'}, tmp_path, {}, 5, 0)
+
+
+@pytest.mark.parametrize('url,expected', [
+    ('https://bioconductor.org/packages/release/bioc/vignettes/DESeq2/inst/doc/DESeq2.html', ('bioconductor', 'deseq2')),
+    ('https://bioconductor.org/packages/3.18/bioc/html/limma.html', ('bioconductor', 'limma')),
+    ('https://bioconductor.org/packages/release/bioc/', None),
+    ('https://bioconductor.org/packages/devel/', None)])
+def test_bioconductor_release_paths_never_become_package_ids(url, expected):
+    assert normalize.package_ids_from_url(url) == expected
+
+
+def test_repository_edges_never_merge_items_of_one_source_or_disjoint_packages():
+    records = [
+        record('wikidata', 'Q10', '@babel/core', repo_keys=['github.com/babel/babel']),
+        record('wikidata', 'Q11', '@babel/parser', repo_keys=['github.com/babel/babel']),
+        record('wikidata', 'Q12', 'scikit-learn', package_ids={'pypi': ['scikit-learn', 'sklearn']},
+               repo_keys=['github.com/scikit-learn/scikit-learn']),
+        record('ecosystems', 'pypi/scikit-learn', 'scikit-learn', package_ids={'pypi': ['scikit-learn']},
+               repo_keys=['github.com/scikit-learn/scikit-learn'])]
+    entities, conflicts = build.merge(records)
+    members = {e['entity_id']: e['members'] for e in entities}
+    assert members['wikidata:Q10'] == ['wikidata:Q10'] and members['wikidata:Q11'] == ['wikidata:Q11']
+    assert members['wikidata:Q12'] == ['ecosystems:pypi/scikit-learn', 'wikidata:Q12']
+    assert conflicts == [{'edge': 'repo:github.com/babel/babel', 'left': 'wikidata:Q10', 'right': 'wikidata:Q11',
+                          'reason': 'same_source_wikidata'}]
+
+
+def test_multi_package_records_do_not_bridge_distinct_packages():
+    records = [
+        record('biotools', 'qpcr', 'qpcr', package_ids={'cran': ['pcr', 'qpcr']}),
+        record('ecosystems', 'cran/pcr', 'pcr', package_ids={'cran': ['pcr']}),
+        record('ecosystems', 'cran/qpcR', 'qpcR', package_ids={'cran': ['qpcr']})]
+    entities, _ = build.merge(records)
+    assert sorted(len(e['members']) for e in entities) == [1, 1, 1]
+
+
+def test_shared_identifiers_never_merge_two_records_of_one_source():
+    records = [
+        record('biotools', 'muscle', 'MUSCLE', rrids=['SCR_011812']),
+        record('biotools', 'berkeley_group', 'Berkeley Phylogenomics Group', rrids=['SCR_011812']),
+        record('wikidata', 'Q1', 'MUSCLE', rrids=['SCR_011812'])]
+    entities, conflicts = build.merge(records)
+    assert len(entities) == 3
+    assert conflicts == [{'edge': 'rrid:SCR_011812', 'left': 'biotools:berkeley_group', 'right': 'biotools:muscle',
+                          'reason': 'same_source_biotools'}]

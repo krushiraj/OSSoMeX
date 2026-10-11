@@ -20,6 +20,7 @@ class _Components:
     def __init__(self, records):
         self.parent = {r['key']: r['key'] for r in records}
         self.packages = {r['key']: {(e, p) for e, ps in r['package_ids'].items() for p in ps} for r in records}
+        self.sources = {r['key']: {r['source']} for r in records}
 
     def find(self, key):
         while self.parent[key] != key:
@@ -28,9 +29,13 @@ class _Components:
         return key
 
     def conflict(self, a, b):
+        # Distinct items of one source are distinct software (e.g. npm packages sharing a monorepo).
+        shared = self.sources[self.find(a)] & self.sources[self.find(b)]
+        if shared:
+            return f'same_source_{min(shared)}'
         left, right = self.packages[self.find(a)], self.packages[self.find(b)]
         for ecosystem in sorted({e for e, _ in left} & {e for e, _ in right}):
-            if {p for e, p in left if e == ecosystem} != {p for e, p in right if e == ecosystem}:
+            if not {p for e, p in left if e == ecosystem} & {p for e, p in right if e == ecosystem}:
                 return f'distinct_{ecosystem}_packages'
         return None
 
@@ -39,32 +44,40 @@ class _Components:
         if ra != rb:
             self.parent[rb] = ra
             self.packages[ra] |= self.packages.pop(rb)
+            self.sources[ra] |= self.sources.pop(rb)
 
 
 def merge(records):
-    """Strong edges (package ID, RRID) always merge; repository edges refuse package conflicts."""
+    """Merge records of different sources on shared IDs (packages and RRIDs first, then repositories)."""
     components = _Components(records)
     strong, repos = {}, {}
     for r in records:
-        for edge in [f'pkg:{e}:{p}' for e, ps in r['package_ids'].items() for p in ps] + [f'rrid:{x}' for x in r['rrids']]:
+        # A record listing several packages of one ecosystem is a collection, not a bridge between them.
+        packages = [f'pkg:{e}:{ps[0]}' for e, ps in r['package_ids'].items() if len(ps) == 1]
+        for edge in packages + [f'rrid:{x}' for x in r['rrids']]:
             strong.setdefault(edge, []).append(r['key'])
         for repo in r['repo_keys']:
             repos.setdefault(f'repo:{repo}', []).append(r['key'])
-    for edge in sorted(strong):
-        first, *rest = sorted(strong[edge], key=_priority)
-        for key in rest:
-            components.union(first, key)
     conflicts = []
-    for edge in sorted(repos):
-        first, *rest = sorted(repos[edge], key=_priority)
-        for key in rest:
-            if components.find(first) == components.find(key):
-                continue
-            reason = components.conflict(first, key)
-            if reason:
-                conflicts.append({'edge': edge, 'left': first, 'right': key, 'reason': reason})
-            else:
-                components.union(first, key)
+    for edges in (strong, repos):
+        for edge in sorted(edges):
+            by_source = {}
+            for key in edges[edge]:
+                by_source.setdefault(key.split(':', 1)[0], []).append(key)
+            # Several records of one source on an edge cannot say which of them it identifies.
+            for source, keys in sorted(by_source.items()):
+                if len(keys) > 1:
+                    left, right = sorted(keys)[:2]
+                    conflicts.append({'edge': edge, 'left': left, 'right': right, 'reason': f'same_source_{source}'})
+            usable = sorted((keys[0] for keys in by_source.values() if len(keys) == 1), key=_priority)
+            for key in usable[1:]:
+                if components.find(usable[0]) == components.find(key):
+                    continue
+                reason = components.conflict(usable[0], key)
+                if reason:
+                    conflicts.append({'edge': edge, 'left': usable[0], 'right': key, 'reason': reason})
+                else:
+                    components.union(usable[0], key)
     groups = {}
     for r in records:
         groups.setdefault(components.find(r['key']), []).append(r)
@@ -161,6 +174,7 @@ def build_run(run: Path) -> dict:
         'status': 'success', 'pull_manifest_sha256': manifest.get('sha256'),
         'records': {s: sum(1 for r in records if r['source'] == s) for s in sorted(manifest['sources'])},
         'entities': len(entities), 'multi_source_entities': sum(1 for e in entities if len(e['sources']) > 1),
+        'largest_entity_members': max((len(e['members']) for e in entities), default=0),
         'refused_merges': len(conflicts), 'exact_forms': len(exact),
         'ambiguous_exact_forms': sum(1 for f in exact if len(f['entities']) > 1),
         'czi_links': {'total': len(links), 'low_trust': sum(r['trust'] == 'low_trust' for r in links),
