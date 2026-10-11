@@ -120,6 +120,8 @@ class ContextResolver:
             features = {'match': match, 'similarity': round(similarity, 4), 'url': entity_id in url_hits}
             score = MATCH_WEIGHTS[match] + self.sim_weight * similarity + (3.0 if features['url'] else 0.0)
             score += 0.3 * ('wikidata' in entity['sources']) + 0.2 * (len(entity['sources']) - 1)
+            # Wikipedia sitelinks separate notable software from bulk-imported namesakes.
+            score += min(1.5, 0.35 * math.log1p(entity.get('sitelinks', 0)))
             ecosystems = set(entity['package_ids'])
             if cues and ecosystems:
                 score += 0.6 if ecosystems & cues else -0.6

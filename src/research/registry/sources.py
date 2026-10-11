@@ -16,7 +16,7 @@ WIKIDATA_LIST_QUERY = ('SELECT DISTINCT ?s WHERE { ?s wdt:P31/wdt:P279* wd:Q7397
                        'MINUS { ?s wdt:P31/wdt:P279* wd:Q7889 } }')
 WIKIDATA_FIELDS = [('repo', 'wdt:P1324'), ('website', 'wdt:P856'), ('pypi', 'wdt:P5568'), ('cran', 'wdt:P5565'),
                    ('bioconductor', 'wdt:P10892'), ('rrid', 'wdt:P9712'), ('doi', 'wdt:P1343/wdt:P356'),
-                   ('instance_of', 'wdt:P31')]
+                   ('instance_of', 'wdt:P31'), ('sitelinks', 'wikibase:sitelinks')]
 
 
 def ecosystems_page_url(page):
@@ -36,8 +36,9 @@ def wikidata_list_url():
 
 
 def wikidata_detail_url(qids):
-    unions = [f'{{ ?s rdfs:label ?v FILTER(LANG(?v)="en") BIND("label" AS ?k) }}',
-              f'{{ ?s skos:altLabel ?v FILTER(LANG(?v)="en") BIND("alias" AS ?k) }}',
+    # Many items keep their label only under the language-neutral "mul" code.
+    unions = [f'{{ ?s rdfs:label ?v FILTER(LANG(?v) IN ("en", "mul")) BIND("label" AS ?k) }}',
+              f'{{ ?s skos:altLabel ?v FILTER(LANG(?v) IN ("en", "mul")) BIND("alias" AS ?k) }}',
               f'{{ ?s schema:description ?v FILTER(LANG(?v)="en") BIND("description" AS ?k) }}']
     unions += [f'{{ ?s {path} ?v BIND("{key}" AS ?k) }}' for key, path in WIKIDATA_FIELDS]
     values = ' '.join('wd:' + q for q in qids)
@@ -53,7 +54,7 @@ def _unique(values):
 
 
 def _record(source, source_id, name, *, aliases=(), description=None, homepages=(), repo_urls=(),
-            package_ids=None, rrids=(), dois=(), topics=(), classes=(), czi=None):
+            package_ids=None, rrids=(), dois=(), topics=(), classes=(), czi=None, sitelinks=0):
     ids = {k: _unique(v) for k, v in (package_ids or {}).items()}
     for url in list(homepages) + list(repo_urls):
         found = package_ids_from_url(url)
@@ -67,7 +68,7 @@ def _record(source, source_id, name, *, aliases=(), description=None, homepages=
            'package_ids': {k: v for k, v in sorted(ids.items()) if v},
            'rrids': _unique(r.strip().upper().removeprefix('RRID:') for r in rrids if r),
            'publication_dois': _unique(d.strip().lower() for d in dois if d), 'topics': _unique(topics),
-           'classes': _unique(classes)}
+           'classes': _unique(classes), 'sitelinks': sitelinks}
     if czi is not None:
         row['czi'] = czi
     return row
@@ -95,14 +96,15 @@ def parse_biotools(tool):
 
 def parse_wikidata(bindings):
     grouped = {}
-    for b in bindings:
+    for b in sorted(bindings, key=lambda b: b['v'].get('xml:lang') != 'en'):
         grouped.setdefault(qid(b['s']['value']), {}).setdefault(b['k']['value'], []).append(b['v']['value'])
     records = []
     for item, fields in sorted(grouped.items()):
         get = lambda key: fields.get(key, [])
         records.append(_record(
-            'wikidata', item, (get('label') or [None])[0], aliases=get('alias'),
+            'wikidata', item, (get('label') or [None])[0], aliases=get('label')[1:] + get('alias'),
             description=(get('description') or [None])[0], homepages=get('website'), repo_urls=get('repo'),
             package_ids={e: [package_id(e, n) for n in get(e)] for e in ('pypi', 'cran', 'bioconductor')},
-            rrids=get('rrid'), dois=get('doi'), classes=[qid(c) for c in get('instance_of')]))
+            rrids=get('rrid'), dois=get('doi'), classes=[qid(c) for c in get('instance_of')],
+            sitelinks=max((int(v) for v in get('sitelinks')), default=0)))
     return records

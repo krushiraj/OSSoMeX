@@ -300,3 +300,26 @@ def test_shared_identifiers_never_merge_two_records_of_one_source():
     assert len(entities) == 3
     assert conflicts == [{'edge': 'rrid:SCR_011812', 'left': 'biotools:berkeley_group', 'right': 'biotools:muscle',
                           'reason': 'same_source_biotools'}]
+
+
+def test_wikidata_accepts_multilingual_labels_but_prefers_english():
+    def lit(qid, key, value, lang):
+        return {'s': {'value': 'http://www.wikidata.org/entity/' + qid}, 'k': {'value': key},
+                'v': {'value': value, 'xml:lang': lang}}
+    records = {r['key']: r for r in sources.parse_wikidata([
+        lit('Q165277', 'label', 'OpenCV', 'mul'), lit('Q165277', 'alias', 'Open Source Computer Vision', 'en'),
+        lit('Q5', 'label', 'Thing (mul)', 'mul'), lit('Q5', 'label', 'Thing', 'en')])}
+    assert records['wikidata:Q165277']['name'] == 'OpenCV'
+    assert records['wikidata:Q5']['name'] == 'Thing' and records['wikidata:Q5']['aliases'] == ['Thing (mul)']
+    from urllib.parse import unquote_plus
+    assert 'LANG(?v) IN ("en", "mul")' in unquote_plus(sources.wikidata_detail_url(['Q1']))
+
+
+def test_wikidata_sitelinks_are_kept_and_entities_take_the_maximum():
+    rows = WIKIDATA_BINDINGS + [binding('Q1659584', 'sitelinks', '41')]
+    records = {r['key']: r for r in sources.parse_wikidata(rows)}
+    assert records['wikidata:Q1659584']['sitelinks'] == 41 and records['wikidata:Q2']['sitelinks'] == 0
+    assert 'wikibase:sitelinks' in __import__('urllib.parse').parse.unquote_plus(sources.wikidata_detail_url(['Q1']))
+    entities, _ = build.merge([record('wikidata', 'Q1', 'A', rrids=['X'], sitelinks=7),
+                               record('biotools', 'a', 'A', rrids=['X'])])
+    assert entities[0]['sitelinks'] == 7

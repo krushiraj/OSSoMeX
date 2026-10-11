@@ -90,3 +90,13 @@ def test_paper_bootstrap_is_deterministic():
 def test_metrics_reject_missing_predictions():
     with pytest.raises(ValueError, match='MISSING_PREDICTIONS'):
         evaluate.link_metrics(GOLD, [{'task_id': 'a', 'entity_id': None}])
+
+
+def test_notable_entities_beat_obscure_namesakes():
+    notable = entity('wikidata:Q918', ['Twitter'], 'online social media and social networking service')
+    notable['sitelinks'] = 180
+    obscure = entity('wikidata:Q107384832', ['twitter'], 'Python library')
+    entities = [notable, obscure]
+    resolver = resolve.ContextResolver(CandidateIndex(entities, build.surface_forms(entities)))
+    result = resolver.resolve(task('t', 'Twitter', ['tweets were collected from [[Twitter]] using its API']))
+    assert result['entity_id'] == 'wikidata:Q918'
