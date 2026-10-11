@@ -22,6 +22,9 @@ def register(subparsers):
     p.add_argument('--gold', type=Path, required=True)
     p.add_argument('--tasks', type=Path, required=True)
     p.add_argument('--predictions', type=Path, required=True, nargs='+')
+    p = commands.add_parser('lockbox')
+    p.add_argument('--config', type=Path, required=True)
+    p.add_argument('--output', type=Path, required=True)
     for command in commands.choices.values():
         command.set_defaults(func=run)
 
@@ -31,6 +34,11 @@ def run(args) -> int:
         return _resolve(args)
     if args.linkage_command == 'evaluate':
         return _evaluate(args)
+    if args.linkage_command == 'lockbox':
+        from .lockbox import build_lockbox
+        result = build_lockbox(json.loads(args.config.read_bytes()), args.output)
+        print(json.dumps({k: v for k, v in result.items() if k not in ('config', 'rejected')}, indent=2))
+        return 0 if result['status'] == 'success' else 2
     from .gold import build_sofair_tasks
     exclude = {x.strip() for x in args.exclude.split(',') if x.strip()}
     result = build_sofair_tasks(args.archive, args.registry, args.output, args.per_domain, args.seed, exclude)
