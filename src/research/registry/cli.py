@@ -19,6 +19,10 @@ def register(subparsers):
     p = commands.add_parser('audit-report')
     p.add_argument('--run', type=Path, required=True)
     p.add_argument('--labels', type=Path, required=True)
+    p = commands.add_parser('search')
+    p.add_argument('--run', type=Path, required=True)
+    p.add_argument('--query', required=True)
+    p.add_argument('--limit', type=int, default=15)
     p = commands.add_parser('coverage')
     p.add_argument('--run', type=Path, required=True)
     p.add_argument('--names', type=Path, required=True)
@@ -42,6 +46,10 @@ def run(args) -> int:
     elif args.registry_command == 'audit-report':
         from .audit import report_run
         result = report_run(args.run, args.labels)
+    elif args.registry_command == 'search':
+        from ..linkage.gold import load_index
+        result = {'status': 'success', 'query': args.query,
+                  'results': load_index(args.run).search(args.query, args.limit)}
     else:
         from .build import coverage_run
         result = coverage_run(args.run, args.names)
