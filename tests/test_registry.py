@@ -216,3 +216,10 @@ def test_coverage_reports_exact_loose_and_ambiguous_matches(tmp_path):
              {'form': 'star', 'key_type': 'loose', 'entities': [{'entity_id': 'a'}, {'entity_id': 'b'}]}]
     result = build.coverage(forms, ['STAR', 'Image-J', 'GATK'])
     assert result == {'names': 3, 'exact': 1, 'loose': 2, 'ambiguous_exact': 1, 'missing_examples': ['GATK']}
+
+
+def test_jsonl_round_trips_unicode_line_separators_inside_strings(tmp_path):
+    from research.data.manifest import write_jsonl
+    rows = [{'description': 'first second\x85third'}, {'description': 'plain'}]
+    write_jsonl(tmp_path / 'rows.jsonl', rows)
+    assert read_jsonl(tmp_path / 'rows.jsonl') == rows
