@@ -146,7 +146,9 @@ def build_lockbox(config: dict, output: Path) -> dict:
 
 def tasks_from_prediction(document, prediction):
     """Group a document's predicted software occurrences into resolver tasks (one per distinct name)."""
-    if prediction.get('status') != 'success' or prediction.get('document_id') != document['document_id']:
+    # Linkage needs detector occurrences only; attribute stages may be partial on long documents.
+    detector = prediction.get('stage_status', {}).get('detector', {}).get('status')
+    if (detector or prediction.get('status')) != 'success' or prediction.get('document_id') != document['document_id']:
         raise ValueError(f"PREDICTION_FAILED: {document['document_id']}")
     groups = {}
     for occurrence in prediction['occurrences']:
@@ -162,3 +164,77 @@ def tasks_from_prediction(document, prediction):
                       'contexts': [_context(document['text'], s['start'], s['end']) for _, s in items[:3]],
                       'urls': [], 'versions': [], 'publishers': [], 'languages': []})
     return tasks
+
+
+def tasks_from_gold(document, rows):
+    text, tasks = document['text'], []
+    for row in rows:
+        spans = [(m.start(), m.end()) for form in row['surface_forms']
+                 for m in re.finditer(re.escape(form), text)]
+        if not spans:
+            raise ValueError(f"SURFACE_FORM_NOT_FOUND: {row['paper_id']} {row['name']}")
+        spans.sort()
+        tasks.append({'task_id': f"{row['paper_id']}#{form_exact(row['name'])}", 'paper_id': row['paper_id'],
+                      'name': row['name'], 'surface_forms': row['surface_forms'], 'mention_count': len(spans),
+                      'domain': document.get('journal') or '', 'contexts': [_context(text, a, b) for a, b in spans[:3]],
+                      'urls': [], 'versions': [], 'publishers': [], 'languages': []})
+    return tasks
+
+
+def extraction_recall(gold, tasks):
+    """Share of gold software (per paper) whose any surface form the extractor produced, ignoring case."""
+    predicted = {}
+    for t in tasks:
+        predicted.setdefault(t['paper_id'], set()).update(form_exact(f) for f in t['surface_forms'])
+    gold_forms = {}
+    for g in gold:
+        gold_forms.setdefault(g['paper_id'], []).append({form_exact(f) for f in g['surface_forms']})
+    found = sum(bool(forms & predicted.get(p, set())) for p, groups in gold_forms.items() for forms in groups)
+    total = sum(len(groups) for groups in gold_forms.values())
+    unmatched = sum(not any({form_exact(f) for f in t['surface_forms']} & forms
+                            for forms in gold_forms.get(t['paper_id'], [])) for t in tasks)
+    return {'gold_software': total, 'found': found, 'recall': found / total if total else None,
+            'predicted_names': len(tasks), 'unmatched_predicted_names': unmatched}
+
+
+def _paper_bootstrap(gold, predicted, samples=2000, seed=0):
+    papers = sorted({g['paper_id'] for g in gold})
+    rng, values = random.Random(seed), {'precision': [], 'recall': []}
+    for _ in range(samples):
+        picks = rng.choices(papers, k=len(papers))
+        weights = {p: picks.count(p) for p in set(picks)}
+        pred = [(f'{p}~{i}', e) for p, e in set(predicted) for i in range(weights.get(p, 0))]
+        g = [{**row, 'paper_id': f"{row['paper_id']}~{i}"} for row in gold for i in range(weights.get(row['paper_id'], 0))]
+        m = paper_link_metrics(g, pred)
+        for name in values:
+            if m[name] is not None:
+                values[name].append(m[name])
+    return {k: [sorted(v)[int(0.025 * (len(v) - 1))], sorted(v)[int(0.975 * (len(v) - 1))]] if v else None
+            for k, v in values.items()}
+
+
+def evaluate_lockbox(run: Path, registry: Path, gold_path: Path, checkpoints) -> dict:
+    from ..data.manifest import read_jsonl
+    from .gold import load_index
+    from .resolve import ContextResolver, FastTextMatch
+    run = Path(run)
+    documents = {d['document_id']: d for d in read_jsonl(run / 'documents.jsonl')}
+    gold = read_jsonl(Path(gold_path))
+    index = load_index(registry)
+    arms = {'fast-text-match': FastTextMatch(index), 'context': ContextResolver(index)}
+    gold_tasks = [t for doc_id, doc in documents.items()
+                  for t in tasks_from_gold(doc, [g for g in gold if g['paper_id'] == doc_id])]
+    report = {'documents': len(documents), 'gold_software': len(gold),
+              'gold_linked': sum(bool(g['entity_ids']) for g in gold), 'arms': {}}
+    sources = {'gold-mentions': gold_tasks}
+    for checkpoint in checkpoints:
+        predictions = {p['document_id']: p for p in read_jsonl(run / f'ossomex-{checkpoint}.jsonl')}
+        tasks = [t for doc_id, doc in documents.items() for t in tasks_from_prediction(doc, predictions[doc_id])]
+        sources[f'ossomex-{checkpoint}'] = tasks
+        report[f'extraction_ossomex-{checkpoint}'] = extraction_recall(gold, tasks)
+    for source, tasks in sources.items():
+        for arm, resolver in arms.items():
+            pairs = [(t['paper_id'], r['entity_id']) for t in tasks for r in [resolver.resolve(t)] if r['entity_id']]
+            report['arms'][f'{source}+{arm}'] = {**paper_link_metrics(gold, pairs),
+                                                 'ci95': _paper_bootstrap(gold, pairs)}
+    return report

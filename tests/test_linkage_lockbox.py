@@ -62,3 +62,36 @@ def test_prediction_occurrences_become_resolver_tasks():
 def test_failed_predictions_are_not_silently_empty():
     with pytest.raises(ValueError, match='PREDICTION_FAILED'):
         lockbox.tasks_from_prediction({'document_id': 'd1', 'text': 'x'}, {'document_id': 'd1', 'status': 'failed'})
+
+
+def test_gold_rows_become_tasks_with_located_contexts():
+    doc = {'document_id': 'd1', 'text': 'Reads were aligned with STAR. Later STAR ran again.'}
+    tasks = lockbox.tasks_from_gold(doc, [{'paper_id': 'd1', 'name': 'STAR', 'surface_forms': ['STAR']}])
+    assert tasks[0]['task_id'] == 'd1#star' and len(tasks[0]['contexts']) == 2
+    with pytest.raises(ValueError, match='SURFACE_FORM_NOT_FOUND'):
+        lockbox.tasks_from_gold(doc, [{'paper_id': 'd1', 'name': 'X', 'surface_forms': ['Xyz']}])
+
+
+def test_extraction_recall_matches_gold_names_case_insensitively():
+    gold = [{'paper_id': 'd1', 'surface_forms': ['STAR', 'Star']}, {'paper_id': 'd1', 'surface_forms': ['R']},
+            {'paper_id': 'd2', 'surface_forms': ['SPSS']}]
+    tasks = [{'paper_id': 'd1', 'surface_forms': ['star']}, {'paper_id': 'd2', 'surface_forms': ['Excel']}]
+    assert lockbox.extraction_recall(gold, tasks) == {'gold_software': 3, 'found': 1, 'recall': 1 / 3,
+                                                      'predicted_names': 2, 'unmatched_predicted_names': 1}
+
+
+def test_paper_bootstrap_is_deterministic_and_bounded():
+    gold = [{'paper_id': 'p1', 'entity_ids': ['a']}, {'paper_id': 'p2', 'entity_ids': ['b']}]
+    ci = lockbox._paper_bootstrap(gold, [('p1', 'a'), ('p2', 'x')], samples=300, seed=2)
+    assert ci == lockbox._paper_bootstrap(gold, [('p1', 'a'), ('p2', 'x')], samples=300, seed=2)
+    assert 0.0 <= ci['precision'][0] <= ci['precision'][1] <= 1.0
+
+
+def test_partial_attribute_stages_still_yield_detector_occurrences():
+    doc = {'document_id': 'd1', 'text': 'Used STAR.'}
+    prediction = {'document_id': 'd1', 'status': 'partial', 'stage_status': {'detector': {'status': 'success'}},
+                  'occurrences': [{'name': 'STAR', 'name_span': {'start': 5, 'end': 9}}]}
+    assert lockbox.tasks_from_prediction(doc, prediction)[0]['name'] == 'STAR'
+    prediction['stage_status']['detector']['status'] = 'partial'
+    with pytest.raises(ValueError, match='PREDICTION_FAILED'):
+        lockbox.tasks_from_prediction(doc, prediction)

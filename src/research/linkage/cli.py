@@ -25,6 +25,11 @@ def register(subparsers):
     p = commands.add_parser('lockbox')
     p.add_argument('--config', type=Path, required=True)
     p.add_argument('--output', type=Path, required=True)
+    p = commands.add_parser('end-to-end')
+    p.add_argument('--run', type=Path, required=True)
+    p.add_argument('--registry', type=Path, required=True)
+    p.add_argument('--gold', type=Path, required=True)
+    p.add_argument('--checkpoints', nargs='+', default=['006', '012'])
     for command in commands.choices.values():
         command.set_defaults(func=run)
 
@@ -34,6 +39,11 @@ def run(args) -> int:
         return _resolve(args)
     if args.linkage_command == 'evaluate':
         return _evaluate(args)
+    if args.linkage_command == 'end-to-end':
+        from .lockbox import evaluate_lockbox
+        print(json.dumps({'status': 'success', **evaluate_lockbox(args.run, args.registry, args.gold,
+                                                                 args.checkpoints)}, indent=2))
+        return 0
     if args.linkage_command == 'lockbox':
         from .lockbox import build_lockbox
         result = build_lockbox(json.loads(args.config.read_bytes()), args.output)
