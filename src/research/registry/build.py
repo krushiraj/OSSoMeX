@@ -76,7 +76,7 @@ def _entity(members):
     entity = {'entity_id': members[0]['key'], 'members': sorted(r['key'] for r in members),
               'sources': sorted({r['source'] for r in members}), 'names': names,
               'description': next((r['description'] for r in members if r['description']), None),
-              'package_ids': {}, 'czi': [r['czi'] for r in members if 'czi' in r]}
+              'package_ids': {}, 'czi': [{**r['czi'], 'record': r['key']} for r in members if 'czi' in r]}
     for field in LIST_FIELDS:
         entity[field] = list(dict.fromkeys(v for r in members for v in r[field]
                                            if field != 'aliases' or v not in names))
@@ -122,7 +122,7 @@ def czi_links(entities, forms):
             rows.append({**link, 'entity_id': entity['entity_id'], 'description': entity['description'],
                          'same_name_entities': others, 'flags': flags,
                          'trust': 'low_trust' if flags else 'unaudited'})
-    return sorted(rows, key=lambda r: r['czi_id'])
+    return sorted(rows, key=lambda r: r['record'])
 
 
 def coverage(forms, names):

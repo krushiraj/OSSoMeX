@@ -138,18 +138,20 @@ def test_surface_forms_expose_collisions_and_flag_czi_links():
     star = next(f for f in forms if f['key_type'] == 'exact' and f['form'] == 'star')
     assert [e['entity_id'] for e in star['entities']] == ['ecosystems:cran/STAR', 'wikidata:Q2']
     links = {link['czi_id']: link for link in build.czi_links(entities, forms)}
+    assert links['SM1']['record'] == 'ecosystems:cran/STAR'
     assert links['SM1']['flags'] == ['name_collision'] and links['SM1']['trust'] == 'low_trust'
     assert links['SM2']['flags'] == ['placeholder_description']
     assert links['SM3']['flags'] == [] and links['SM3']['trust'] == 'unaudited'
 
 
 def test_audit_sample_is_deterministic_and_stratified():
-    links = [{'czi_id': f'SM{i}', 'mentions_count': i} for i in range(50)]
+    links = [{'record': f'ecosystems:pypi/p{i:02d}', 'czi_id': f'SM{i // 2}', 'mentions_count': i} for i in range(50)]
     first = audit.sample(links, top=5, random_n=10, seed=7)
     assert first == audit.sample(list(reversed(links)), top=5, random_n=10, seed=7)
-    assert [r['czi_id'] for r in first if r['stratum'] == 'top'] == ['SM49', 'SM48', 'SM47', 'SM46', 'SM45']
-    randoms = [r['czi_id'] for r in first if r['stratum'] == 'random']
-    assert len(randoms) == 10 and not set(randoms) & {'SM49', 'SM48', 'SM47', 'SM46', 'SM45'}
+    top = [r['record'] for r in first if r['stratum'] == 'top']
+    assert top == [f'ecosystems:pypi/p{i}' for i in (49, 48, 47, 46, 45)]
+    randoms = [r['record'] for r in first if r['stratum'] == 'random']
+    assert len(randoms) == 10 and not set(randoms) & set(top)
 
 
 def test_wilson_interval_and_report_exclude_unsure():

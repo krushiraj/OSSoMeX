@@ -38,7 +38,7 @@ def run(args) -> int:
         from .audit import sample_run
         config = json.loads(args.config.read_bytes())
         result = sample_run(args.run, args.top, args.random, args.seed,
-                            policy={'user_agent': config['user_agent']})
+                            policy={'user_agent': config['user_agent']}, delay=config.get('delay_seconds', 0.2))
     elif args.registry_command == 'audit-report':
         from .audit import report_run
         result = report_run(args.run, args.labels)

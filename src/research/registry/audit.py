@@ -3,18 +3,19 @@
 import json
 import math
 import random
+import time
 from pathlib import Path
 
 from ..data.acquire import fetch_public
-from ..data.manifest import json_bytes, read_jsonl, write_jsonl, write_once
+from ..data.manifest import digest, json_bytes, read_jsonl, write_jsonl, write_once
 
 VERDICTS = {'correct', 'wrong', 'unsure'}
 
 
 def sample(links, top=200, random_n=200, seed=42):
-    ordered = sorted(links, key=lambda r: (-r['mentions_count'], r['czi_id']))
+    ordered = sorted(links, key=lambda r: (-r['mentions_count'], r['record']))
     head = ordered[:top]
-    rest = sorted(ordered[top:], key=lambda r: r['czi_id'])
+    rest = sorted(ordered[top:], key=lambda r: r['record'])
     tail = random.Random(seed).sample(rest, min(random_n, len(rest)))
     return [{**r, 'stratum': 'top'} for r in head] + [{**r, 'stratum': 'random'} for r in tail]
 
@@ -54,24 +55,28 @@ def report(tasks, labels):
                         'unflagged': _summary([r for r in rows if not r['flags']])}}
 
 
-def _paper_evidence(link, raw, policy, papers):
+def _paper_evidence(link, raw, policy, papers, delay):
     mentions_url = link['project_url'] + '/mentions?per_page=' + str(papers)
-    name = f"{link['czi_id']}-mentions.json"
-    mentions = json.loads(_fetch(mentions_url, raw / name, policy))
+    # CZI IDs are shared across ecosystems, so cache files are keyed by URL.
+    name = f"{digest(mentions_url.encode())[:20]}-mentions.json"
+    mentions = json.loads(_fetch(mentions_url, raw / name, policy, delay))
     evidence = []
     for i, mention in enumerate(mentions[:papers]):
-        paper = json.loads(_fetch(mention['paper_url'], raw / f"{link['czi_id']}-paper-{i + 1}.json", policy))
+        paper = json.loads(_fetch(mention['paper_url'], raw / f"{digest(mention['paper_url'].encode())[:20]}-paper.json", policy, delay))
         evidence.append({'doi': paper.get('doi'), 'openalex_id': paper.get('openalex_id'),
                          'title': paper.get('title'), 'publication_date': (paper.get('publication_date') or '')[:10]})
     return evidence
 
 
-def _fetch(url, destination, policy):
+def _fetch(url, destination, policy, delay):
+    cached = destination.exists()
     fetch_public(url, destination, policy)
+    if not cached and delay:
+        time.sleep(delay)
     return destination.read_bytes()
 
 
-def sample_run(run: Path, top=200, random_n=200, seed=42, papers=5, policy=None) -> dict:
+def sample_run(run: Path, top=200, random_n=200, seed=42, papers=5, policy=None, delay=0.2) -> dict:
     run = Path(run)
     links = read_jsonl(run / 'czi_links.jsonl')
     entities = {e['entity_id']: e for e in read_jsonl(run / 'entities.jsonl')}
@@ -80,13 +85,13 @@ def sample_run(run: Path, top=200, random_n=200, seed=42, papers=5, policy=None)
     for row in sample(links, top, random_n, seed):
         entity = entities[row['entity_id']]
         tasks.append({
-            'task_id': f"{row['stratum']}-{row['czi_id']}", 'stratum': row['stratum'], 'czi_id': row['czi_id'],
+            'task_id': f"{row['stratum']}:{row['record']}", 'record': row['record'], 'stratum': row['stratum'], 'czi_id': row['czi_id'],
             'czi_name': row['czi_name'], 'entity_id': row['entity_id'], 'mentions_count': row['mentions_count'],
             'flags': row['flags'], 'package_ids': entity['package_ids'], 'description': entity['description'],
             'repo_keys': entity['repo_keys'],
             'same_name_entities': [{'entity_id': o, 'names': entities[o]['names'][:3],
                                     'description': entities[o]['description']} for o in row['same_name_entities'][:5]],
-            'papers': _paper_evidence(row, run / 'raw/audit', policy, papers)})
+            'papers': _paper_evidence(row, run / 'raw/audit', policy, papers, delay)})
     write_jsonl(run / 'audit/tasks.jsonl', tasks)
     summary = {'status': 'success', 'tasks': len(tasks), 'top': top, 'random': random_n, 'seed': seed,
                'papers_per_task': papers}
