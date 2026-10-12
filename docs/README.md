@@ -15,5 +15,6 @@ Try the [four-example interactive walkthrough](usage.md#interactive-demo), or wa
 
 - [012 benchmark and limitations](research/benchmark-012.md)
 - [006 versus 012 detector regression](research/detector-regression.md)
+- [Paper-to-software linkage pilot (provisional)](research/linkage-pilot.md)
 - [Roadmap](../ROADMAP.md)
 - [v0.0.1 release](releases/v0.0.1.md)

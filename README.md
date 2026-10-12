@@ -89,6 +89,8 @@ Exact software-name F1 (%), fresh 012 comparison:
 
 The local snippet labels are provisional and development-exposed. Gold and local samples answer different questions; do not pool their scores. Softcite's projected name scope includes languages and excludes implicit mentions. [Methods, precision/recall, limitations and next experiments](docs/research/benchmark-012.md).
 
+**Linking papers to software entities (provisional).** On 30 fresh Methods sections, 012 plus a context-aware resolver links papers to registry entities at 93.8% precision and 70.5% recall, versus 77.0% and 63.1% for exact name matching. Gold links await maintainer review. [Linkage pilot](docs/research/linkage-pilot.md).
+
 ## Develop and reproduce
 
 - [Contributor setup and repository map](CONTRIBUTING.md)
@@ -98,7 +100,7 @@ The local snippet labels are provisional and development-exposed. Gold and local
 - [Documentation index](docs/README.md)
 - [Release notes](CHANGELOG.md) and [release verification](docs/releases/v0.0.1.md)
 
-Use the maintained `research full-label`, `research comparison`, `research data`, and `research annotate` command groups. Dated experiment helpers are research recipes with explicit prerequisites, not a one-command reproduction of all results. Large data, weights, raw responses and local outreach drafts stay outside Git.
+Use the maintained `research full-label`, `research comparison`, `research data`, `research annotate`, `research registry` and `research linkage` command groups. Dated experiment helpers are research recipes with explicit prerequisites, not a one-command reproduction of all results. Large data, weights, raw responses and local outreach drafts stay outside Git.
 
 ## Citation and terms
 

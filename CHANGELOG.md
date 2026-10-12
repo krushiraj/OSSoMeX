@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Add `research registry`: a software entity registry merged from papers.ecosyste.ms, bio.tools and Wikidata, with optional Wikidata layers and a link-quality audit.
+- Add `research linkage`: fast-text-match and context-aware resolvers, gold-task builders, paper-level evaluation and a fresh Europe PMC Methods lockbox for end-to-end scoring.
+- Read JSONL on `\n` only, so U+2028 inside strings no longer splits records.
+- Document provisional linkage results in `docs/research/linkage-pilot.md`. No model weights changed.
+
 ## v0.0.12 - 2026-10-04 (Python package 0.0.1)
 
 First versioned research handoff. This replaces the earlier unreleased 0.1.0 placeholder in package metadata; it is not a model-quality upgrade.

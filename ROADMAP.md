@@ -13,7 +13,9 @@
 - Create a human-reviewed, paper-grouped cross-domain lockbox.
 - Keep inspected examples in development/regression sets.
 - Report per-domain precision/recall, uncertainty and annotation coverage.
-- Evaluate registry/project entity resolution separately from extraction.
+- Review the AI-drafted linkage gold and confirm the provisional [linkage pilot](docs/research/linkage-pilot.md) results.
+- Build a second fresh lockbox before judging any new detector on end-to-end linkage.
+- Raise extraction recall on Methods text; it limits end-to-end linkage recall.
 
 ## Runtime and distribution
 
