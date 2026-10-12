@@ -1,0 +1,6 @@
+{
+  "user_agent": "OSSoMeX-registry/0.1 (+https://github.com/krushiraj/OSSoMeX)",
+  "sources": ["ecosystems", "biotools", "wikidata"],
+  "delay_seconds": 0.2,
+  "wikidata_batch": 250
+}

@@ -29,7 +29,11 @@ def write_jsonl(path: Path, rows: list[dict]) -> None:
 
 def read_jsonl(path: Path) -> list[dict]:
     rows = []
-    for number, line in enumerate(path.read_text(encoding='utf-8').splitlines(), 1):
+    # JSONL rows end at '\n' only; str.splitlines() would also split U+2028/U+0085 inside strings.
+    lines = path.read_text(encoding='utf-8').split('\n')
+    if lines and lines[-1] == '':
+        lines.pop()
+    for number, line in enumerate((line.removesuffix('\r') for line in lines), 1):
         try:
             row = json.loads(line)
             if not isinstance(row, dict):
