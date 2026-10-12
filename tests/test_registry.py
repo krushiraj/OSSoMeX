@@ -323,3 +323,26 @@ def test_wikidata_sitelinks_are_kept_and_entities_take_the_maximum():
     entities, _ = build.merge([record('wikidata', 'Q1', 'A', rrids=['X'], sitelinks=7),
                                record('biotools', 'a', 'A', rrids=['X'])])
     assert entities[0]['sitelinks'] == 7
+
+
+def test_extra_wikidata_layers_append_new_items_only(tmp_path, monkeypatch):
+    from research.registry import pull
+    layer = {'name': 'languages', 'classes': ['Q9143'], 'require': ['P856', 'P1324']}
+    lang_list = sources.wikidata_layer_list_url(layer)
+    from urllib.parse import unquote_plus
+    assert 'wd:Q9143' in unquote_plus(lang_list) and 'wdt:P856' in unquote_plus(lang_list)
+    responses = {
+        sources.ecosystems_page_url(1): [], sources.biotools_page_url(1): {'list': [], 'next': None},
+        sources.wikidata_list_url(): {'results': {'bindings': [{'s': {'value': 'http://www.wikidata.org/entity/Q2'}}]}},
+        sources.wikidata_detail_url(['Q2']): {'results': {'bindings': WIKIDATA_BINDINGS[-3:]}},
+        lang_list: {'results': {'bindings': [{'s': {'value': 'http://www.wikidata.org/entity/Q2'}},
+                                             {'s': {'value': 'http://www.wikidata.org/entity/Q28865'}}]}},
+        sources.wikidata_detail_url(['Q28865']): {'results': {'bindings': [binding('Q28865', 'label', 'Python')]}}}
+    monkeypatch.setattr(pull, 'fetch_public', fake_fetch(responses))
+    manifest = pull.pull({'user_agent': 't', 'delay_seconds': 0, 'wikidata_layers': [layer]}, tmp_path / 'run')
+    files = manifest['sources']['wikidata']['files']
+    assert [f['path'] for f in files] == ['raw/wikidata/list.json', 'raw/wikidata/page-0001.json',
+                                          'raw/wikidata/layer-languages-list.json',
+                                          'raw/wikidata/layer-languages-0001.json']
+    stats = build.build_run(tmp_path / 'run')
+    assert stats['records']['wikidata'] == 2

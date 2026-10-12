@@ -7,7 +7,7 @@ from pathlib import Path
 from ..data.acquire import fetch_public
 from ..data.manifest import digest, json_bytes, write_once
 from .sources import (LICENCES, biotools_page_url, ecosystems_page_url, qid, wikidata_detail_url,
-                      wikidata_list_url)
+                      wikidata_layer_list_url, wikidata_list_url)
 
 MAX_PAGES = 2000
 
@@ -60,6 +60,18 @@ def pull(config: dict, output: Path) -> dict:
             destination = run / 'raw' / 'wikidata' / f'page-{number:04d}.json'
             _, row = _get(wikidata_detail_url(chunk), destination, policy, delay)
             files.append(_entry(run, destination, row))
+        seen = set(qids)
+        # Optional layers append batches for new items only, so earlier pages stay cached byte for byte.
+        for layer in config.get('wikidata_layers', []):
+            destination = run / 'raw' / 'wikidata' / f"layer-{layer['name']}-list.json"
+            data, row = _get(wikidata_layer_list_url(layer), destination, policy, delay)
+            files.append(_entry(run, destination, row, 'list'))
+            extra = sorted({qid(b['s']['value']) for b in data['results']['bindings']} - seen, key=lambda q: int(q[1:]))
+            seen |= set(extra)
+            for number, start in enumerate(range(0, len(extra), batch), 1):
+                destination = run / 'raw' / 'wikidata' / f"layer-{layer['name']}-{number:04d}.json"
+                _, row = _get(wikidata_detail_url(extra[start:start + batch]), destination, policy, delay)
+                files.append(_entry(run, destination, row))
         sources['wikidata'] = files
     manifest = {'status': 'success', 'config': config,
                 'sources': {s: {'pages': len(f), 'licence': LICENCES[s], 'files': f} for s, f in sources.items()}}

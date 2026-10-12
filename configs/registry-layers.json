@@ -1,0 +1,32 @@
+{
+  "user_agent": "OSSoMeX-registry/0.1 (+https://github.com/krushiraj/OSSoMeX)",
+  "sources": [
+    "ecosystems",
+    "biotools",
+    "wikidata"
+  ],
+  "delay_seconds": 0.2,
+  "wikidata_batch": 250,
+  "wikidata_layers": [
+    {
+      "name": "languages",
+      "classes": [
+        "Q9143"
+      ],
+      "require": [
+        "P856",
+        "P1324"
+      ]
+    },
+    {
+      "name": "literature-databases",
+      "classes": [
+        "Q1631107",
+        "Q1789476"
+      ],
+      "require": [
+        "P856"
+      ]
+    }
+  ]
+}

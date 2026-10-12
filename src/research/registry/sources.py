@@ -35,6 +35,14 @@ def wikidata_list_url():
     return _sparql_url(WIKIDATA_LIST_QUERY)
 
 
+def wikidata_layer_list_url(layer):
+    """Optional extra classes (e.g. programming languages) whose items have one of the required properties."""
+    # One UNION branch per class: a VALUES list over the subclass path times out on the public endpoint.
+    classes = ' UNION '.join(f'{{ ?s wdt:P31/wdt:P279* wd:{c} }}' for c in layer['classes'])
+    required = ' UNION '.join(f'{{ ?s wdt:{p} [] }}' for p in layer['require'])
+    return _sparql_url(f'SELECT DISTINCT ?s WHERE {{ {classes} {required} }}')
+
+
 def wikidata_detail_url(qids):
     # Many items keep their label only under the language-neutral "mul" code.
     unions = [f'{{ ?s rdfs:label ?v FILTER(LANG(?v) IN ("en", "mul")) BIND("label" AS ?k) }}',
