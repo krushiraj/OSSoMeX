@@ -1,0 +1,11 @@
+{
+  "user_agent": "OSSoMeX-registry/0.1 (+https://github.com/krushiraj/OSSoMeX)",
+  "query": "OPEN_ACCESS:y AND LICENSE:\"cc by\" AND HAS_FT:y AND FIRST_PDATE:[2026-07-01 TO 2026-10-12] AND METHODS:\"software\"",
+  "max_pages": 6,
+  "n": 90,
+  "oversample": 180,
+  "per_journal": 2,
+  "seed": 20261012,
+  "min_chars": 800,
+  "exposure_paths": ["data/scibert-v2", "data/openalex_snippets", "inputs", "reports/scibert-v2", "data/linkage/lockbox-001"]
+}
